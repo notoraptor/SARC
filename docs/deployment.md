@@ -94,7 +94,7 @@ From your workstation, you can use the `mongo.sh` script to create it:
 scripts/remote/mongo.sh <sarc-server> install 
 ```
 
-(see the [remote scripts README for more info](../scripts/remote/README.md))
+(see the [remote scripts README for more info](scripts/remote/README.md))
 
 ### MongoDB manual start
 
