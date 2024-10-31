@@ -20,6 +20,7 @@ def test_db_init(cli_main):
         "users",
         "clusters",
         "gpu_billing",
+        "node_gpu_mapping",
     ]:
         collection = db[collection_name]
         assert not collection.index_information()
@@ -33,6 +34,7 @@ def test_db_init(cli_main):
         "users",
         "clusters",
         "gpu_billing",
+        "node_gpu_mapping",
     ]:
         collection = db[collection_name]
         assert collection.index_information()

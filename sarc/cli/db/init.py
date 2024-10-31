@@ -54,6 +54,8 @@ class DbInit:
 
         create_gpu_billing_indices(db)
 
+        create_node_gpu_mapping_indices(db)
+
         return 0
 
     def create_acount(self, client, db):
@@ -95,6 +97,7 @@ class DbInit:
             "jobs",
             "clusters",
             "gpu_billing",
+            "node_gpu_mapping",
         ]
 
         try:
@@ -152,6 +155,17 @@ def create_gpu_billing_indices(db):
         [
             ("cluster_name", pymongo.ASCENDING),
             ("billing_start_date", pymongo.ASCENDING),
+        ],
+        unique=True,
+    )
+
+
+def create_node_gpu_mapping_indices(db):
+    db_collection = db.node_gpu_mapping
+    db_collection.create_index(
+        [
+            ("cluster_name", pymongo.ASCENDING),
+            ("since", pymongo.ASCENDING),
         ],
         unique=True,
     )
