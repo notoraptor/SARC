@@ -303,12 +303,12 @@ def create_gpu_billings():
     return [
         {
             "cluster_name": "fromage",
-            "billing_start_date": "2023-02-22",
+            "since": "2023-02-22",
             "gpu_to_billing": {"fromage_gpu_1": 100, "fromage_gpu_2": 200},
         },
         {
             "cluster_name": "patate",
-            "billing_start_date": "2023-02-15",
+            "since": "2023-02-15",
             "gpu_to_billing": {
                 "patate_gpu_1": 400,
                 "patate_gpu_2": 700,
@@ -320,7 +320,7 @@ def create_gpu_billings():
         },
         {
             "cluster_name": "patate",
-            "billing_start_date": "2023-02-18",
+            "since": "2023-02-18",
             "gpu_to_billing": {
                 "patate_gpu_1": 440,
                 "patate_gpu_2": 750,
@@ -330,7 +330,7 @@ def create_gpu_billings():
         },
         {
             "cluster_name": "raisin",
-            "billing_start_date": "2023-02-16",
+            "since": "2023-02-16",
             "gpu_to_billing": {
                 "raisin_gpu_1": 100,
                 "raisin_gpu_2": 200,

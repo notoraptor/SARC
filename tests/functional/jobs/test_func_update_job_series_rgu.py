@@ -216,7 +216,7 @@ class ExampleData:
                 # Iterate billings in reverse order to find a billing
                 # whom billing date <= job date.
                 for curr_billing in reversed(billings):
-                    if curr_billing.billing_start_date <= row.start_time:
+                    if curr_billing.since <= row.start_time:
                         fn_expect = row.expect_after
                         billing = curr_billing
                         break
@@ -350,7 +350,7 @@ def test_update_job_series_rgu_one_date(monkeypatch, file_regression):
     all_gpu_billings = {
         cluster_name: [
             {
-                "billing_start_date": billing.billing_start_date.strftime("%Y-%m-%d"),
+                "since": billing.since.strftime("%Y-%m-%d"),
                 "gpu_to_billing": billing.gpu_to_billing,
             }
             for billing in get_cluster_gpu_billings(cluster_name)
@@ -405,7 +405,7 @@ def test_update_job_series_rgu_with_many_dates(file_regression, monkeypatch):
     all_gpu_billings = {
         cluster_name: [
             {
-                "billing_start_date": billing.billing_start_date.strftime("%Y-%m-%d"),
+                "since": billing.since.strftime("%Y-%m-%d"),
                 "gpu_to_billing": billing.gpu_to_billing,
             }
             for billing in get_cluster_gpu_billings(cluster_name)

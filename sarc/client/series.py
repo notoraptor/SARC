@@ -351,7 +351,7 @@ def update_cluster_job_series_rgu(
         curr_mapping = dated_gpu_billings[i - 1]
         next_mapping = dated_gpu_billings[i]
         _compute_rgu_stats_after_date(
-            df, cluster_name, gpu_to_rgu, curr_mapping, next_mapping.billing_start_date
+            df, cluster_name, gpu_to_rgu, curr_mapping, next_mapping.since
         )
 
     # Finally, we update columns for latest RGU mapping.
@@ -384,7 +384,7 @@ def _compute_rgu_stats_before_date(
 
     # Compute slice for jobs before billing start date.
     slice_rows = (df["cluster_name"] == cluster_name) & (
-        df["start_time"] < gpu_billing.billing_start_date
+        df["start_time"] < gpu_billing.since
     )
     # Map GPU type to RGU for related jobs.
     # If a GPU type is not found in any of dicts,
@@ -427,12 +427,12 @@ def _compute_rgu_stats_after_date(
     # Compute slice: curr mapping date <= start time < next mapping date (if next is available)
     if next_billing_date is None:
         slice_rows = (df["cluster_name"] == cluster_name) & (
-            df["start_time"] >= curr_gpu_billing.billing_start_date
+            df["start_time"] >= curr_gpu_billing.since
         )
     else:
         slice_rows = (
             (df["cluster_name"] == cluster_name)
-            & (df["start_time"] >= curr_gpu_billing.billing_start_date)
+            & (df["start_time"] >= curr_gpu_billing.since)
             & (df["start_time"] < next_billing_date)
         )
     # Map GPU type to RGU and billing for related jobs.

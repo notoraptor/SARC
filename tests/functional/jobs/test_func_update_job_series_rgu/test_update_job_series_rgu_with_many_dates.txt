@@ -22,7 +22,7 @@ GPU billing values
 {
  "patate": [
   {
-   "billing_start_date": "2023-02-15",
+   "since": "2023-02-15",
    "gpu_to_billing": {
     "patate_gpu_1": 400.0,
     "patate_gpu_2": 700.0,
@@ -33,7 +33,7 @@ GPU billing values
    }
   },
   {
-   "billing_start_date": "2023-02-18",
+   "since": "2023-02-18",
    "gpu_to_billing": {
     "patate_gpu_1": 440.0,
     "patate_gpu_2": 750.0,
@@ -44,7 +44,7 @@ GPU billing values
  ],
  "fromage": [
   {
-   "billing_start_date": "2023-02-22",
+   "since": "2023-02-22",
    "gpu_to_billing": {
     "fromage_gpu_1": 100.0,
     "fromage_gpu_2": 200.0

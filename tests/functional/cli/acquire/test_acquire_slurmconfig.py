@@ -107,7 +107,7 @@ def test_acquire_slurmconfig(cli_main, caplog):
 
     expected_gpu_billing_1 = GPUBilling(
         cluster_name="raisin",
-        billing_start_date="2020-01-01",
+        since="2020-01-01",
         gpu_to_billing={
             "gpu1": 5000,
             "gpu:gpu1:9": 9 * 5000,
@@ -151,7 +151,7 @@ def test_acquire_slurmconfig(cli_main, caplog):
     )
     expected_gpu_billing_2 = GPUBilling(
         cluster_name="raisin",
-        billing_start_date="2020-05-01",
+        since="2020-05-01",
         gpu_to_billing={
             "gpu1": 4000,
             "gpu2": 9000,
@@ -232,7 +232,7 @@ PartitionName=partition2 Nodes=mynode[2,8-11,42] TRESBillingWeights=x=1,GRES/gpu
 def assert_same_billings(given: List[GPUBilling], expected: List[GPUBilling]):
     assert len(given) == len(expected)
     for given_billing, expected_billing in zip(given, expected):
-        assert given_billing.billing_start_date == expected_billing.billing_start_date
+        assert given_billing.since == expected_billing.since
         assert given_billing.gpu_to_billing == expected_billing.gpu_to_billing
 
 

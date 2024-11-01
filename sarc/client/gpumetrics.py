@@ -21,13 +21,13 @@ class GPUBilling(BaseModel):
     id: ObjectIdField = None
 
     cluster_name: str
-    billing_start_date: datetime
+    since: datetime
     gpu_to_billing: Dict[str, float]
 
-    @validator("billing_start_date", pre=True)
+    @validator("since", pre=True)
     @classmethod
-    def _ensure_billing_start_date(cls, value):
-        """Parse billing_start_date from stored string to Python datetime."""
+    def _ensure_since(cls, value):
+        """Parse `since` from stored string to Python datetime."""
         if isinstance(value, str):
             return datetime.combine(datetime.fromisoformat(value), time.min).replace(
                 tzinfo=MTL
@@ -45,14 +45,14 @@ class GPUBillingRepository(AbstractRepository[GPUBilling]):
     def save_gpu_billing(
         self,
         cluster_name: str,
-        billing_start_date: str,
+        since: str,
         gpu_to_billing: Dict[str, float],
     ):
         """Save GPU->billing mapping into database."""
 
         billing = GPUBilling(
             cluster_name=cluster_name,
-            billing_start_date=billing_start_date,
+            since=since,
             gpu_to_billing=gpu_to_billing,
         )
         # Check if a GPU->billing mapping was already registered
@@ -61,7 +61,7 @@ class GPUBillingRepository(AbstractRepository[GPUBilling]):
             self.find_by(
                 {
                     "cluster_name": billing.cluster_name,
-                    "billing_start_date": billing.billing_start_date,
+                    "since": billing.since,
                 }
             )
         )
@@ -72,18 +72,18 @@ class GPUBillingRepository(AbstractRepository[GPUBilling]):
                 self.get_collection().update_one(
                     {
                         "cluster_name": billing.cluster_name,
-                        "billing_start_date": billing.billing_start_date,
+                        "since": billing.since,
                     },
                     {"$set": self.to_document(billing)},
                 )
                 logger.info(
-                    f"[{billing.cluster_name}] GPU<->billing updated for: {billing.billing_start_date}"
+                    f"[{billing.cluster_name}] GPU<->billing updated for: {billing.since}"
                 )
         else:
             # If no record found, create a new one.
             self.save(billing)
             logger.info(
-                f"[{billing.cluster_name}] GPU<->billing saved for: {billing.billing_start_date}"
+                f"[{billing.cluster_name}] GPU<->billing saved for: {billing.since}"
             )
 
 
@@ -94,10 +94,10 @@ def _gpu_billing_collection():
 
 
 def get_cluster_gpu_billings(cluster_name: str) -> List[GPUBilling]:
-    """Return GPU->billing mapping records for a cluster, sorted by ascending billing_start_date."""
+    """Return GPU->billing mapping records for a cluster, sorted by ascending `since`."""
     return sorted(
         _gpu_billing_collection().find_by({"cluster_name": cluster_name}),
-        key=lambda b: b.billing_start_date,
+        key=lambda b: b.since,
     )
 
 

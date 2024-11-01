@@ -154,7 +154,7 @@ def create_gpu_billing_indices(db):
     db_collection.create_index(
         [
             ("cluster_name", pymongo.ASCENDING),
-            ("billing_start_date", pymongo.ASCENDING),
+            ("since", pymongo.ASCENDING),
         ],
         unique=True,
     )
