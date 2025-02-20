@@ -33,7 +33,6 @@ def get_job_time_series(
     """Fetch job metrics.
 
     Arguments:
-        cluster: The cluster on which to fetch metrics.
         job: The job for which to fetch metrics.
         metric: The metric, which must be in ``slurm_job_metric_names``.
         min_interval: The minimal reporting interval, in seconds.
