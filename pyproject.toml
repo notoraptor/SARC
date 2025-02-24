@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "sarc"
-version = "0.1.0"
+version = "0.1.1"
 description = "Surveillance et analyse des ressources de calcul"
 authors = ["Mila-IDT"]
 readme = "README.md"
