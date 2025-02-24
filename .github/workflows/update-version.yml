@@ -34,6 +34,6 @@ jobs:
       - name: Commit changes
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
-          branch: main
+          branch: master
           commit_message: "Update package version: ${{ env.prev_package_version }} -> ${{ env.next_package_version }}"
           file_pattern: 'pyproject.toml'
