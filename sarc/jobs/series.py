@@ -208,26 +208,29 @@ class PrometheusCache:
             if os.path.isfile(path):
                 with open(path, encoding="utf-8") as file:
                     cache = json.load(file)
-                if cache != results:
+                if cache["results"] != results:
                     raise RuntimeError(
                         f"\n"
                         f"Cache != Results\n"
                         f"----------------\n"
                         f"\n"
-                        f"{self._diff(cache, results)}\n"
+                        f"{self._diff(cache, self._to_cache(results))}\n"
                     )
                 logging.info(f"from cache {self.keystring}")
             else:
                 with open(path, "w", encoding="utf-8") as file:
-                    json.dump(results, file)
+                    json.dump(self._to_cache(results), file)
                 logging.info(f"cached {self.keystring}")
         return results
 
-    def _diff(self, dict1, dict2):
+    def _to_cache(self, results):
+        return {"query": self.query, "results": results}
+
+    def _diff(self, cache, results):
         import difflib
 
-        d1_str = json.dumps(dict1, indent=1, sort_keys=True)
-        d2_str = json.dumps(dict2, indent=1, sort_keys=True)
+        d1_str = json.dumps(cache, indent=1, sort_keys=True)
+        d2_str = json.dumps(results, indent=1, sort_keys=True)
 
         diff = difflib.unified_diff(
             d1_str.splitlines(),
