@@ -167,7 +167,7 @@ class PrometheusCache:
                     assert aggregation == "total"
                     range_seconds = duration_seconds
 
-            fmt = "%Y-%m-%dT%Hh%Mm%Ss%fu"
+            fmt = "%Y-%m-%dT%Hh%Mm%Ss"
             keystring = (
                 f"{job.cluster_name}"
                 f".{job.job_id}"
@@ -220,11 +220,11 @@ class PrometheusCache:
                         f"Cache:\n"
                         f"{pprint.pformat(cache)}\n"
                     )
-                print("from cache", self.keystring)
+                logging.info(f"from cache {self.keystring}")
             else:
                 with open(path, "w", encoding="utf-8") as file:
                     json.dump(results, file)
-                print("cached", self.keystring)
+                logging.info(f"cached {self.keystring}")
         return results
 
 
