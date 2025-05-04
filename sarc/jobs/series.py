@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import pprint
 from datetime import datetime
 from typing import TYPE_CHECKING
 
@@ -11,6 +12,7 @@ import pandas
 from pandas import DataFrame
 from prometheus_api_client import MetricRangeDataFrame
 
+from sarc.cache import CachePolicy, with_cache
 from sarc.client.job import JobStatistics, SlurmJob, Statistics
 from sarc.config import MTL, UTC, ClusterConfig, config
 from sarc.traces import trace_decorator
@@ -84,6 +86,9 @@ def get_job_time_series(
         if aggregation == "interval":
             range_seconds = interval
         elif aggregation == "total":
+            # NB: `offset` has already been used above to generate `offset_string`
+            # and is not used anymore later in this function. So, following line
+            # does not have any effect.
             offset += duration_seconds
             range_seconds = duration_seconds
         else:
@@ -91,6 +96,7 @@ def get_job_time_series(
 
         query = f"{query}[{range_seconds}s]"
         if "(" in measure:
+            # NB: This case is never used nor tested anywhere
             query = measure.format(f"{query} {offset_string}")
         else:
             query = f"{measure}({query} {offset_string})"
@@ -98,10 +104,127 @@ def get_job_time_series(
     else:
         query = f"{query}[{duration_seconds}s:{interval}s] {offset_string}"
 
-    results = job.fetch_cluster_config().prometheus.custom_query(query)
+    results = PrometheusCache(
+        job=job,
+        metric=metric,
+        now=now,
+        query=query,
+        min_interval=min_interval,
+        max_points=max_points,
+        measure=measure,
+        aggregation=aggregation,
+    ).debug_get()
     if dataframe:
         return MetricRangeDataFrame(results) if results else None
     else:
+        return results
+
+
+class PrometheusCache:
+    """
+    Key:
+    No need for `aggregation` in key, since it is used to compute range_seconds
+        job.cluster_name
+        job.job_id
+        job.start_time
+        job.end_time
+        duration_seconds
+        interval
+        metric
+        measure
+        range_seconds
+    """
+
+    __slots__ = ("job", "query", "keystring", "cache_policy")
+
+    def __init__(
+        self,
+        job: SlurmJob,
+        metric: str,
+        now: datetime,
+        query: str,
+        min_interval: int = 30,
+        max_points: int = 100,
+        measure: str | None = None,
+        aggregation: str = "total",
+    ):
+        keystring = None
+        if (
+            job.start_time is not None
+            and job.end_time is not None
+            and job.start_time <= job.end_time <= now
+            and (measure is None or "(" not in measure)
+        ):
+            duration = job.end_time - job.start_time
+            duration_seconds = int(duration.total_seconds())
+            interval = int(max(duration_seconds / max_points, min_interval))
+
+            range_seconds = None
+            if measure and aggregation:
+                if aggregation == "interval":
+                    range_seconds = interval
+                else:
+                    assert aggregation == "total"
+                    range_seconds = duration_seconds
+
+            fmt = "%Y-%m-%dT%Hh%Mm%Ss%fu"
+            keystring = (
+                f"{job.cluster_name}"
+                f".{job.job_id}"
+                f".from-{job.start_time.strftime(fmt)}"
+                f".to-{job.end_time.strftime(fmt)}"
+                f".for-{duration_seconds}s"
+                f".each-{interval}s"
+                f".{metric}"
+                f".{f'measure-{measure}.in-{range_seconds}s' if measure else 'no_measure'}"
+                f".json"
+            )
+
+        self.job = job
+        self.query = query
+        self.keystring = keystring
+        self.cache_policy = CachePolicy.use
+
+    def get(self):
+        return with_cache(
+            self._call_prometheus,
+            subdirectory="prometheus_cache",
+            key=self._cache_key,
+        )(cache_policy=self.cache_policy)
+
+    def _call_prometheus(self):
+        return self.job.fetch_cluster_config().prometheus.custom_query(self.query)
+
+    def _cache_key(self):
+        return self.keystring
+
+    def debug_get(self):
+        results = self._call_prometheus()
+
+        folder = ".local_cache"
+        os.makedirs(folder, exist_ok=True)
+        if self.keystring:
+            path = os.path.join(folder, self.keystring)
+            if os.path.isfile(path):
+                with open(path, encoding="utf-8") as file:
+                    cache = json.load(file)
+                if results != cache:
+                    raise RuntimeError(
+                        f"\n"
+                        f"Results != Cache\n"
+                        f"----------------\n"
+                        f"\n"
+                        f"Results:\n"
+                        f"{pprint.pformat(results)}\n"
+                        f"\n"
+                        f"Cache:\n"
+                        f"{pprint.pformat(cache)}\n"
+                    )
+                print("from cache", self.keystring)
+            else:
+                with open(path, "w", encoding="utf-8") as file:
+                    json.dump(results, file)
+                print("cached", self.keystring)
         return results
 
 
