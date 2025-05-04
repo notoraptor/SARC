@@ -208,17 +208,13 @@ class PrometheusCache:
             if os.path.isfile(path):
                 with open(path, encoding="utf-8") as file:
                     cache = json.load(file)
-                if results != cache:
+                if cache != results:
                     raise RuntimeError(
                         f"\n"
-                        f"Results != Cache\n"
+                        f"Cache != Results\n"
                         f"----------------\n"
                         f"\n"
-                        f"Results:\n"
-                        f"{pprint.pformat(results)}\n"
-                        f"\n"
-                        f"Cache:\n"
-                        f"{pprint.pformat(cache)}\n"
+                        f"{self._diff(cache, results)}\n"
                     )
                 logging.info(f"from cache {self.keystring}")
             else:
@@ -226,6 +222,22 @@ class PrometheusCache:
                     json.dump(results, file)
                 logging.info(f"cached {self.keystring}")
         return results
+
+    def _diff(self, dict1, dict2):
+        import difflib
+
+        d1_str = json.dumps(dict1, indent=1, sort_keys=True)
+        d2_str = json.dumps(dict2, indent=1, sort_keys=True)
+
+        diff = difflib.unified_diff(
+            d1_str.splitlines(),
+            d2_str.splitlines(),
+            fromfile="dict1",
+            tofile="dict2",
+            lineterm="",
+        )
+
+        return "\n".join(diff)
 
 
 def get_job_time_series_metric_names():
