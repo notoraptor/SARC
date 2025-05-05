@@ -225,13 +225,16 @@ class PrometheusCache:
         results = self._call_prometheus()
         r2 = self._call_query_range()
 
-        if r2 and results != r2:
-            raise RuntimeError(
-                f"\n"
-                f"Results with offset != Results with query range\n"
-                f"Keystring: {self.keystring}\n\n"
-                f"{self._diff(results, r2)}\n"
-            )
+        if r2:
+            if results == r2:
+                logging.info(f"query_range works: {self.keystring}")
+            else:
+                raise RuntimeError(
+                    f"\n"
+                    f"Results with offset != Results with query range\n"
+                    f"Keystring: {self.keystring}\n\n"
+                    f"{self._diff(results, r2)}\n"
+                )
 
         folder = ".local_cache"
         os.makedirs(folder, exist_ok=True)
