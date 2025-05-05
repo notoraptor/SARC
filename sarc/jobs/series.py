@@ -227,7 +227,7 @@ class PrometheusCache:
 
         if r2 is not None:
             if results == r2:
-                logging.info(f"query_range: {self.keystring}")
+                logging.info(f"query_range ({r2[0]['values']}): {self.keystring}")
             else:
                 raise RuntimeError(
                     f"\n"
@@ -254,7 +254,9 @@ class PrometheusCache:
                         f"\n"
                         f"{self._diff(cache, self._to_cache(results))}\n"
                     )
-                logging.info(f"from cache {self.keystring}")
+                logging.info(
+                    f"in cache{' w/range' if r2 is not None else ''} ({results[0]['values']}) {self.keystring}"
+                )
             else:
                 with open(path, "w", encoding="utf-8") as file:
                     json.dump(self._to_cache(results), file)
