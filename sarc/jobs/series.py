@@ -233,6 +233,7 @@ class PrometheusCache:
                     f"\n"
                     f"Results with offset != Results with query range\n"
                     f"Keystring: {self.keystring}\n\n"
+                    f"Job timestamp: from {self.job.start_time.timestamp()} to {self.job.end_time.timestamp()}\n"
                     f"{self._diff(results, r2)}\n"
                 )
 
@@ -262,11 +263,11 @@ class PrometheusCache:
     def _to_cache(self, results):
         return {"query": self.query, "results": results}
 
-    def _diff(self, cache, results):
+    def _diff(self, dict1, dict2):
         import difflib
 
-        d1_str = json.dumps(cache, indent=1, sort_keys=True)
-        d2_str = json.dumps(results, indent=1, sort_keys=True)
+        d1_str = json.dumps(dict1, indent=1, sort_keys=True)
+        d2_str = json.dumps(dict2, indent=1, sort_keys=True)
 
         diff = difflib.unified_diff(
             d1_str.splitlines(),
