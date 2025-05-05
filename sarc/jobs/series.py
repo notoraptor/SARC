@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 import logging
 import os
-import pprint
 from datetime import datetime
 from typing import TYPE_CHECKING
 
@@ -135,7 +134,15 @@ class PrometheusCache:
         range_seconds
     """
 
-    __slots__ = ("job", "query", "keystring", "cache_policy")
+    __slots__ = (
+        "job",
+        "query",
+        "keystring",
+        "cache_policy",
+        "measure",
+        "interval",
+        "metric",
+    )
 
     def __init__(
         self,
@@ -149,6 +156,7 @@ class PrometheusCache:
         aggregation: str = "total",
     ):
         keystring = None
+        interval = None
         if (
             job.start_time is not None
             and job.end_time is not None
@@ -181,6 +189,9 @@ class PrometheusCache:
             )
 
         self.job = job
+        self.measure = measure
+        self.metric = metric
+        self.interval = interval
         self.query = query
         self.keystring = keystring
         self.cache_policy = CachePolicy.use
@@ -195,11 +206,32 @@ class PrometheusCache:
     def _call_prometheus(self):
         return self.job.fetch_cluster_config().prometheus.custom_query(self.query)
 
+    def _call_query_range(self):
+        return (
+            self.job.fetch_cluster_config().prometheus.custom_query_range(
+                query=self.metric,
+                start_time=self.job.start_time,
+                end_time=self.job.end_time,
+                step=f"{self.interval}s",
+            )
+            if self.keystring and not self.measure
+            else None
+        )
+
     def _cache_key(self):
         return self.keystring
 
     def debug_get(self):
         results = self._call_prometheus()
+        r2 = self._call_query_range()
+
+        if r2 and results != r2:
+            raise RuntimeError(
+                f"\n"
+                f"Results with offset != Results with query range\n"
+                f"Keystring: {self.keystring}\n\n"
+                f"{self._diff(results, r2)}\n"
+            )
 
         folder = ".local_cache"
         os.makedirs(folder, exist_ok=True)
@@ -212,6 +244,7 @@ class PrometheusCache:
                     raise RuntimeError(
                         f"\n"
                         f"Cache != Results\n"
+                        f"Keystring: {self.keystring}\n"
                         f"----------------\n"
                         f"\n"
                         f"{self._diff(cache, self._to_cache(results))}\n"
