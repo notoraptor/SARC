@@ -209,7 +209,7 @@ class PrometheusCache:
     def _call_query_range(self):
         return (
             self.job.fetch_cluster_config().prometheus.custom_query_range(
-                query=self.metric,
+                query=f'{self.metric}{{slurmjobid=~"{self.job.job_id}"}}',
                 start_time=self.job.start_time,
                 end_time=self.job.end_time,
                 step=f"{self.interval}s",
