@@ -225,9 +225,9 @@ class PrometheusCache:
         results = self._call_prometheus()
         r2 = self._call_query_range()
 
-        if r2:
+        if r2 is not None:
             if results == r2:
-                logging.info(f"query_range works: {self.keystring}")
+                logging.info(f"query_range: {self.keystring}")
             else:
                 raise RuntimeError(
                     f"\n"
