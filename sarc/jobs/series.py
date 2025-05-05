@@ -232,8 +232,9 @@ class PrometheusCache:
                 raise RuntimeError(
                     f"\n"
                     f"Results with offset != Results with query range\n"
-                    f"Keystring: {self.keystring}\n\n"
+                    f"Query: {self.query}\n"
                     f"Job timestamp: from {self.job.start_time.timestamp()} to {self.job.end_time.timestamp()}\n"
+                    f"Keystring: {self.keystring}\n\n"
                     f"{self._diff(results, r2)}\n"
                 )
 
