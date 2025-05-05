@@ -221,13 +221,16 @@ class PrometheusCache:
     def _cache_key(self):
         return self.keystring
 
+    def _len_results(self, results: list):
+        return len(results[0]['values']) if results else 0
+
     def debug_get(self):
         results = self._call_prometheus()
         r2 = self._call_query_range()
 
         if r2 is not None:
             if results == r2:
-                logging.info(f"query_range ({r2[0]['values']}): {self.keystring}")
+                logging.info(f"query_range ({self._len_results(r2)}): {self.keystring}")
             else:
                 raise RuntimeError(
                     f"\n"
@@ -255,7 +258,7 @@ class PrometheusCache:
                         f"{self._diff(cache, self._to_cache(results))}\n"
                     )
                 logging.info(
-                    f"in cache{' w/range' if r2 is not None else ''} ({results[0]['values']}) {self.keystring}"
+                    f"in cache{' w/range' if r2 is not None else ''} ({self._len_results(results)}) {self.keystring}"
                 )
             else:
                 with open(path, "w", encoding="utf-8") as file:
