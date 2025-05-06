@@ -34,39 +34,49 @@ def get_job_time_series(
     results_offset = _get_job_time_series(
         job, metric, min_interval, max_points, measure, aggregation, dataframe=False
     )
-    results_range = _get_job_time_series_using_query_range(
-        job, metric, min_interval, max_points, measure, aggregation, dataframe=False
-    )
 
-    fmt = "%Y-%m-%dT%Hh%Mm%Ss"
-    keystring = (
-        f"{job.cluster_name}"
-        f".{job.job_id}"
-        f".from-{job.start_time.strftime(fmt) if job.start_time else None}"
-        f".to-{job.end_time.strftime(fmt) if job.end_time else None}"
-        f".{metric}"
-        f".min-interval-{min_interval}s"
-        f".max-points-{max_points}"
-        f".{f'measure-{measure}-{aggregation}' if measure else 'no_measure'}"
-        f".json"
-    )
-
-    if results_offset == results_range:
-        logging.info(
-            f"query_range {PromCache.len_results(results_offset)}: {keystring}"
-        )
-    elif job.end_time is None:
-        logging.info(f"no_end_time: {keystring}")
-    else:
-        raise RuntimeError(
-            f"\n\n"
-            f"Results with offset {PromCache.len_results(results_offset)} "
-            f"!= Results with query range {PromCache.len_results(results_range)}\n"
-            f"Keystring: {keystring}\n\n"
-            f"{PromCache.diff(results_offset, results_range)}\n"
+    # We don't cache if end_time is not available.
+    if job.end_time is not None:
+        results_range = _get_job_time_series_using_query_range(
+            job, metric, min_interval, max_points, measure, aggregation, dataframe=False
         )
 
-    results = results_range
+        fmt = "%Y-%m-%dT%Hh%Mm%Ss"
+        keystring = (
+            f"{job.cluster_name}"
+            f".{job.job_id}"
+            f".from-{job.start_time.strftime(fmt) if job.start_time else None}"
+            f".to-{job.end_time.strftime(fmt) if job.end_time else None}"
+            f".{metric}"
+            f".min-interval-{min_interval}s"
+            f".max-points-{max_points}"
+            f".{f'measure-{measure}-{aggregation}' if measure else 'no_measure'}"
+            f".json"
+        )
+
+        if results_offset == results_range:
+            logging.info(
+                f"query_range {PromCache.len_results(results_offset)}: {keystring}"
+            )
+        else:
+            folder = ".prometheus_cache_errors"
+            os.makedirs(folder, exist_ok=True)
+            output_path = os.path.join(folder, f"{keystring}.err")
+            with open(output_path, mode="w", encoding="utf-8") as file:
+                file.write(
+                    f"\n\n"
+                    f"Results with offset {PromCache.len_results(results_offset)} "
+                    f"!= Results with query range {PromCache.len_results(results_range)}\n"
+                    f"Keystring: {keystring}\n\n"
+                    f"{PromCache.diff(results_offset, results_range)}\n"
+                )
+            logging.warning(
+                f"with_offset {PromCache.len_results(results_offset)} "
+                f"!= with_query_range {PromCache.len_results(results_range)}"
+                f": {keystring}"
+            )
+
+    results = results_offset
     if dataframe:
         return MetricRangeDataFrame(results) if results else None
     else:
@@ -225,7 +235,7 @@ class PromCache:
         return [len(data["values"]) for data in results]
 
     @classmethod
-    def diff(cls, dict1, dict2):
+    def diff(cls, dict1, dict2, save_long_diff=False):
         import difflib
 
         d1_str = json.dumps(dict1, indent=1, sort_keys=True)
@@ -242,13 +252,13 @@ class PromCache:
         )
 
         text = "\n".join(diff)
-        if len(diff) <= 100:
-            return text
-        else:
+        if len(diff) > 100 and save_long_diff:
             output_path = "out.diff"
             with open(output_path, mode="w", encoding="utf-8") as file:
                 file.write(text)
             return f"({len(diff)} diff lines saved in {output_path})"
+        else:
+            return text
 
 
 # pylint: disable=too-many-branches
