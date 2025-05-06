@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -23,6 +23,318 @@ if TYPE_CHECKING:
 # pylint: disable=too-many-branches
 @trace_decorator()
 def get_job_time_series(
+    job: SlurmJob,
+    metric: str,
+    min_interval: int = 30,
+    max_points: int = 100,
+    measure: str | None = None,
+    aggregation: str = "total",
+    dataframe: bool = True,
+):
+    results_query = _get_job_time_series(
+        job, metric, min_interval, max_points, measure, aggregation, dataframe=False
+    )
+    results_range = _get_job_time_series_using_query_range(
+        job, metric, min_interval, max_points, measure, aggregation, dataframe=False
+    )
+
+    fmt = "%Y-%m-%dT%Hh%Mm%Ss"
+    keystring = (
+        f"{job.cluster_name}"
+        f".{job.job_id}"
+        f".from-{job.start_time.strftime(fmt)}"
+        f".to-{job.end_time.strftime(fmt)}"
+        f".{metric}"
+        f".min-interval-{min_interval}s"
+        f".max-points-{max_points}"
+        f".{f'measure-{measure}-{aggregation}' if measure else 'no_measure'}"
+        f".json"
+    )
+
+    if results_query == results_range:
+        logging.info(
+            f"query_range ({PromCache.len_results(results_query)}): {keystring}"
+        )
+    else:
+        raise RuntimeError(
+            f"\n"
+            f"Results with offset != Results with query range\n"
+            f"Keystring: {keystring}\n\n"
+            f"{PromCache.diff(results_query, results_range)}\n"
+        )
+
+    results = results_range
+    if dataframe:
+        return MetricRangeDataFrame(results) if results else None
+    else:
+        return results
+
+
+class PromCache:
+    """
+    Key:
+    No need for `aggregation` in key, since it is used to compute range_seconds
+        job.cluster_name
+        job.job_id
+        job.start_time
+        job.end_time
+        duration_seconds
+        interval
+        metric
+        measure
+        range_seconds
+    """
+
+    __slots__ = (
+        "job",
+        "query",
+        "keystring",
+        "cache_policy",
+        "measure",
+        "interval",
+        "metric",
+    )
+
+    def __init__(
+        self,
+        job: SlurmJob,
+        metric: str,
+        now: datetime,
+        query: str,
+        min_interval: int = 30,
+        max_points: int = 100,
+        measure: str | None = None,
+        aggregation: str = "total",
+    ):
+        keystring = None
+        interval = None
+        if (
+            job.start_time is not None
+            and job.end_time is not None
+            and job.start_time <= job.end_time <= now
+            and (measure is None or "(" not in measure)
+        ):
+            duration = job.end_time - job.start_time
+            duration_seconds = int(duration.total_seconds())
+            interval = int(max(duration_seconds / max_points, min_interval))
+
+            range_seconds = None
+            if measure and aggregation:
+                if aggregation == "interval":
+                    range_seconds = interval
+                else:
+                    assert aggregation == "total"
+                    range_seconds = duration_seconds
+
+            fmt = "%Y-%m-%dT%Hh%Mm%Ss"
+            keystring = (
+                f"{job.cluster_name}"
+                f".{job.job_id}"
+                f".from-{job.start_time.strftime(fmt)}"
+                f".to-{job.end_time.strftime(fmt)}"
+                f".for-{duration_seconds}s"
+                f".each-{interval}s"
+                f".{metric}"
+                f".{f'measure-{measure}.in-{range_seconds}s' if measure else 'no_measure'}"
+                f".json"
+            )
+
+        self.job = job
+        self.measure = measure
+        self.metric = metric
+        self.interval = interval
+        self.query = query
+        self.keystring = keystring
+        self.cache_policy = CachePolicy.use
+
+    def debug_get(self):
+        results = self._call_prometheus()
+        r2 = self._call_query_range()
+
+        if r2 is not None:
+            if results == r2:
+                logging.info(f"query_range ({self.len_results(r2)}): {self.keystring}")
+            else:
+                raise RuntimeError(
+                    f"\n"
+                    f"Results with offset != Results with query range\n"
+                    f"Query: {self.query}\n"
+                    f"Job timestamp: from {self.job.start_time.timestamp()} to {self.job.end_time.timestamp()}\n"
+                    f"Keystring: {self.keystring}\n\n"
+                    f"{self.diff(results, r2)}\n"
+                )
+
+        folder = ".local_cache"
+        os.makedirs(folder, exist_ok=True)
+        if self.keystring:
+            path = os.path.join(folder, self.keystring)
+            if os.path.isfile(path):
+                with open(path, encoding="utf-8") as file:
+                    cache = json.load(file)
+                if cache["results"] != results:
+                    raise RuntimeError(
+                        f"\n"
+                        f"Cache != Results\n"
+                        f"Keystring: {self.keystring}\n"
+                        f"----------------\n"
+                        f"\n"
+                        f"{self.diff(cache, self._to_cache(results))}\n"
+                    )
+                logging.info(
+                    f"in cache{' w/range' if r2 is not None else ''} ({self.len_results(results)}) {self.keystring}"
+                )
+            else:
+                with open(path, "w", encoding="utf-8") as file:
+                    json.dump(self._to_cache(results), file)
+                logging.info(f"cached {self.keystring}")
+        return results
+
+    def get(self):
+        return with_cache(
+            self._call_prometheus,
+            subdirectory="prometheus_cache",
+            key=self._cache_key,
+        )(cache_policy=self.cache_policy)
+
+    def _call_prometheus(self):
+        return self.job.fetch_cluster_config().prometheus.custom_query(self.query)
+
+    def _call_query_range(self):
+        return (
+            self.job.fetch_cluster_config().prometheus.custom_query_range(
+                query=f'{self.metric}{{slurmjobid=~"{self.job.job_id}"}}',
+                start_time=self.job.start_time,
+                end_time=self.job.end_time,
+                step=f"{self.interval}s",
+            )
+            if self.keystring and not self.measure
+            else None
+        )
+
+    def _cache_key(self):
+        return self.keystring
+
+    def _to_cache(self, results):
+        return {"query": self.query, "results": results}
+
+    @classmethod
+    def len_results(cls, results: list):
+        return len(results[0]["values"]) if results else 0
+
+    @classmethod
+    def diff(cls, dict1, dict2):
+        import difflib
+
+        d1_str = json.dumps(dict1, indent=1, sort_keys=True)
+        d2_str = json.dumps(dict2, indent=1, sort_keys=True)
+
+        diff = difflib.unified_diff(
+            d1_str.splitlines(),
+            d2_str.splitlines(),
+            fromfile="dict1",
+            tofile="dict2",
+            lineterm="",
+        )
+
+        return "\n".join(diff)
+
+
+# pylint: disable=too-many-branches
+@trace_decorator()
+def _get_job_time_series_using_query_range(
+    job: SlurmJob,
+    metric: str,
+    min_interval: int = 30,
+    max_points: int = 100,
+    measure: str | None = None,
+    aggregation: str = "total",
+    dataframe: bool = True,
+):
+    """Fetch job metrics.
+
+    Arguments:
+        cluster: The cluster on which to fetch metrics.
+        job: The job for which to fetch metrics.
+        metric: The metric, which must be in ``slurm_job_metric_names``.
+        min_interval: The minimal reporting interval, in seconds.
+        max_points: The maximal number of data points to return.
+        measure: The aggregation measure to use ("avg_over_time", etc.)
+            A format string can be passed, e.g. ("quantile_over_time(0.5, {})")
+            to get the median.
+        aggregation: Either "total", to aggregate over the whole range, or
+            "interval", to aggregate over each interval.
+        dataframe: If True, return a DataFrame. Otherwise, return the list of
+            dicts returned by Prometheus's API.
+    """
+
+    if aggregation not in ("interval", "total", None):
+        raise ValueError(
+            f"Aggregation must be one of ['total', 'interval', None]: {aggregation}"
+        )
+
+    if job.job_state != "RUNNING" and not job.elapsed_time:
+        return None if dataframe else []
+    if metric not in slurm_job_metric_names:
+        raise ValueError(f"Unknown metric name: {metric}")
+
+    selector = f'{metric}{{slurmjobid=~"{job.job_id}"}}'
+
+    now = datetime.now(tz=UTC).astimezone(MTL)
+
+    if job.end_time and job.end_time <= now:
+        duration = job.end_time - job.start_time
+        end_time = job.end_time
+    else:
+        # Duration should not be looking in the future
+        duration = now - job.start_time
+        end_time = now
+
+    duration_seconds = int(duration.total_seconds())
+
+    if duration_seconds <= 0:
+        return None if dataframe else []
+
+    interval = int(max(duration_seconds / max_points, min_interval))
+
+    if measure and aggregation:
+        if aggregation == "interval":
+            range_seconds = interval
+        elif aggregation == "total":
+            range_seconds = duration_seconds
+        else:
+            raise ValueError(f"Unknown aggregation: {aggregation}")
+
+        selector_with_range = f"{selector}[{range_seconds}s]"
+        if "(" in measure:
+            # NB: This case is never used nor tested anywhere
+            nested_query = measure.format(selector_with_range)
+        else:
+            nested_query = f"{measure}({selector_with_range})"
+        query = f"{nested_query}[{duration_seconds}s:{range_seconds}s]"
+        # Query range must cover only range_seconds from end_time.
+        start_time = end_time - timedelta(seconds=range_seconds)
+        step_seconds = range_seconds
+    else:
+        query = selector
+        # Query range must cover entire job time.
+        start_time = job.start_time
+        step_seconds = interval
+
+    results = job.fetch_cluster_config().prometheus.custom_query_range(
+        query=query,
+        start_time=start_time,
+        end_time=end_time,
+        step=f"{step_seconds}s",
+    )
+    if dataframe:
+        return MetricRangeDataFrame(results) if results else None
+    else:
+        return results
+
+
+# pylint: disable=too-many-branches
+@trace_decorator()
+def _get_job_time_series(
     job: SlurmJob,
     metric: str,
     min_interval: int = 30,
@@ -103,187 +415,11 @@ def get_job_time_series(
     else:
         query = f"{query}[{duration_seconds}s:{interval}s] {offset_string}"
 
-    results = PrometheusCache(
-        job=job,
-        metric=metric,
-        now=now,
-        query=query,
-        min_interval=min_interval,
-        max_points=max_points,
-        measure=measure,
-        aggregation=aggregation,
-    ).debug_get()
+    results = job.fetch_cluster_config().prometheus.custom_query(query)
     if dataframe:
         return MetricRangeDataFrame(results) if results else None
     else:
         return results
-
-
-class PrometheusCache:
-    """
-    Key:
-    No need for `aggregation` in key, since it is used to compute range_seconds
-        job.cluster_name
-        job.job_id
-        job.start_time
-        job.end_time
-        duration_seconds
-        interval
-        metric
-        measure
-        range_seconds
-    """
-
-    __slots__ = (
-        "job",
-        "query",
-        "keystring",
-        "cache_policy",
-        "measure",
-        "interval",
-        "metric",
-    )
-
-    def __init__(
-        self,
-        job: SlurmJob,
-        metric: str,
-        now: datetime,
-        query: str,
-        min_interval: int = 30,
-        max_points: int = 100,
-        measure: str | None = None,
-        aggregation: str = "total",
-    ):
-        keystring = None
-        interval = None
-        if (
-            job.start_time is not None
-            and job.end_time is not None
-            and job.start_time <= job.end_time <= now
-            and (measure is None or "(" not in measure)
-        ):
-            duration = job.end_time - job.start_time
-            duration_seconds = int(duration.total_seconds())
-            interval = int(max(duration_seconds / max_points, min_interval))
-
-            range_seconds = None
-            if measure and aggregation:
-                if aggregation == "interval":
-                    range_seconds = interval
-                else:
-                    assert aggregation == "total"
-                    range_seconds = duration_seconds
-
-            fmt = "%Y-%m-%dT%Hh%Mm%Ss"
-            keystring = (
-                f"{job.cluster_name}"
-                f".{job.job_id}"
-                f".from-{job.start_time.strftime(fmt)}"
-                f".to-{job.end_time.strftime(fmt)}"
-                f".for-{duration_seconds}s"
-                f".each-{interval}s"
-                f".{metric}"
-                f".{f'measure-{measure}.in-{range_seconds}s' if measure else 'no_measure'}"
-                f".json"
-            )
-
-        self.job = job
-        self.measure = measure
-        self.metric = metric
-        self.interval = interval
-        self.query = query
-        self.keystring = keystring
-        self.cache_policy = CachePolicy.use
-
-    def get(self):
-        return with_cache(
-            self._call_prometheus,
-            subdirectory="prometheus_cache",
-            key=self._cache_key,
-        )(cache_policy=self.cache_policy)
-
-    def _call_prometheus(self):
-        return self.job.fetch_cluster_config().prometheus.custom_query(self.query)
-
-    def _call_query_range(self):
-        return (
-            self.job.fetch_cluster_config().prometheus.custom_query_range(
-                query=f'{self.metric}{{slurmjobid=~"{self.job.job_id}"}}',
-                start_time=self.job.start_time,
-                end_time=self.job.end_time,
-                step=f"{self.interval}s",
-            )
-            if self.keystring and not self.measure
-            else None
-        )
-
-    def _cache_key(self):
-        return self.keystring
-
-    def _len_results(self, results: list):
-        return len(results[0]['values']) if results else 0
-
-    def debug_get(self):
-        results = self._call_prometheus()
-        r2 = self._call_query_range()
-
-        if r2 is not None:
-            if results == r2:
-                logging.info(f"query_range ({self._len_results(r2)}): {self.keystring}")
-            else:
-                raise RuntimeError(
-                    f"\n"
-                    f"Results with offset != Results with query range\n"
-                    f"Query: {self.query}\n"
-                    f"Job timestamp: from {self.job.start_time.timestamp()} to {self.job.end_time.timestamp()}\n"
-                    f"Keystring: {self.keystring}\n\n"
-                    f"{self._diff(results, r2)}\n"
-                )
-
-        folder = ".local_cache"
-        os.makedirs(folder, exist_ok=True)
-        if self.keystring:
-            path = os.path.join(folder, self.keystring)
-            if os.path.isfile(path):
-                with open(path, encoding="utf-8") as file:
-                    cache = json.load(file)
-                if cache["results"] != results:
-                    raise RuntimeError(
-                        f"\n"
-                        f"Cache != Results\n"
-                        f"Keystring: {self.keystring}\n"
-                        f"----------------\n"
-                        f"\n"
-                        f"{self._diff(cache, self._to_cache(results))}\n"
-                    )
-                logging.info(
-                    f"in cache{' w/range' if r2 is not None else ''} ({self._len_results(results)}) {self.keystring}"
-                )
-            else:
-                with open(path, "w", encoding="utf-8") as file:
-                    json.dump(self._to_cache(results), file)
-                logging.info(f"cached {self.keystring}")
-        return results
-
-    def _to_cache(self, results):
-        return {"query": self.query, "results": results}
-
-    def _diff(self, dict1, dict2):
-        import difflib
-
-        d1_str = json.dumps(dict1, indent=1, sort_keys=True)
-        d2_str = json.dumps(dict2, indent=1, sort_keys=True)
-
-        diff = difflib.unified_diff(
-            d1_str.splitlines(),
-            d2_str.splitlines(),
-            fromfile="dict1",
-            tofile="dict2",
-            lineterm="",
-        )
-
-        return "\n".join(diff)
 
 
 def get_job_time_series_metric_names():
