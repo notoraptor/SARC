@@ -1,4 +1,5 @@
 import json
+import  logging
 import sys
 from typing import List, Tuple
 
@@ -9,10 +10,13 @@ from sarc.jobs.series import get_job_time_series
 
 @scraping_mode_required
 def main():
+    logging.basicConfig(level=logging.INFO)
+
     with open(sys.argv[1], encoding="utf-8") as file:
         job_identifiers: List[Tuple[str, int]] = json.load(file)
 
-    for cluster_name, job_id in job_identifiers:
+    for i, (cluster_name, job_id) in enumerate(job_identifiers):
+        print(f"[{i + 1}/{len(job_identifiers)}]", cluster_name, job_id)
         job = get_job(cluster=cluster_name, job_id=job_id)
         gpu_type = _get_gpu_type(job)
         stats = job.statistics(recompute=True, save=False)
