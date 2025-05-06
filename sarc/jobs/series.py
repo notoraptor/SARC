@@ -53,13 +53,13 @@ def get_job_time_series(
 
     if results_offset == results_range:
         logging.info(
-            f"query_range ({PromCache.len_results(results_offset)}): {keystring}"
+            f"query_range {PromCache.len_results(results_offset)}: {keystring}"
         )
     else:
         raise RuntimeError(
             f"\n\n"
-            f"Results with offset ({PromCache.len_results(results_offset)}) "
-            f"!= Results with query range ({PromCache.len_results(results_range)})\n"
+            f"Results with offset {PromCache.len_results(results_offset)} "
+            f"!= Results with query range {PromCache.len_results(results_range)}\n"
             f"Keystring: {keystring}\n\n"
             f"{PromCache.diff(results_offset, results_range)}\n"
         )
@@ -154,7 +154,7 @@ class PromCache:
 
         if r2 is not None:
             if results == r2:
-                logging.info(f"query_range ({self.len_results(r2)}): {self.keystring}")
+                logging.info(f"query_range {self.len_results(r2)}: {self.keystring}")
             else:
                 raise RuntimeError(
                     f"\n"
@@ -220,7 +220,7 @@ class PromCache:
 
     @classmethod
     def len_results(cls, results: list):
-        return len(results[0]["values"]) if results else 0
+        return [len(data["values"]) for data in results]
 
     @classmethod
     def diff(cls, dict1, dict2):
