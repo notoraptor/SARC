@@ -42,8 +42,8 @@ def get_job_time_series(
     keystring = (
         f"{job.cluster_name}"
         f".{job.job_id}"
-        f".from-{job.start_time.strftime(fmt)}"
-        f".to-{job.end_time.strftime(fmt)}"
+        f".from-{job.start_time.strftime(fmt) if job.start_time else None}"
+        f".to-{job.end_time.strftime(fmt) if job.end_time else None}"
         f".{metric}"
         f".min-interval-{min_interval}s"
         f".max-points-{max_points}"
