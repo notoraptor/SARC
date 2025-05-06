@@ -196,6 +196,7 @@ def _get_job_time_series_using_query_range(
         start_time = job.start_time
         step_seconds = interval
 
+    logging.info(f"query_range: {query} start={start_time} end={end_time} (now? {end_time == now}) step={step_seconds}")
     results = job.fetch_cluster_config().prometheus.custom_query_range(
         query=query,
         start_time=start_time,
@@ -291,6 +292,7 @@ def _get_job_time_series(
     else:
         query = f"{query}[{duration_seconds}s:{interval}s] {offset_string}"
 
+    logging.info(f"query_offset: {query}")
     results = job.fetch_cluster_config().prometheus.custom_query(query)
     if dataframe:
         return MetricRangeDataFrame(results) if results else None
