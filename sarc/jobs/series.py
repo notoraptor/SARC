@@ -31,7 +31,7 @@ def get_job_time_series(
     aggregation: str = "total",
     dataframe: bool = True,
 ):
-    results_query = _get_job_time_series(
+    results_offset = _get_job_time_series(
         job, metric, min_interval, max_points, measure, aggregation, dataframe=False
     )
     results_range = _get_job_time_series_using_query_range(
@@ -51,16 +51,17 @@ def get_job_time_series(
         f".json"
     )
 
-    if results_query == results_range:
+    if results_offset == results_range:
         logging.info(
-            f"query_range ({PromCache.len_results(results_query)}): {keystring}"
+            f"query_range ({PromCache.len_results(results_offset)}): {keystring}"
         )
     else:
         raise RuntimeError(
-            f"\n"
-            f"Results with offset != Results with query range\n"
+            f"\n\n"
+            f"Results with offset ({PromCache.len_results(results_offset)}) "
+            f"!= Results with query range ({PromCache.len_results(results_range)})\n"
             f"Keystring: {keystring}\n\n"
-            f"{PromCache.diff(results_query, results_range)}\n"
+            f"{PromCache.diff(results_offset, results_range)}\n"
         )
 
     results = results_range
