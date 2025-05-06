@@ -55,6 +55,8 @@ def get_job_time_series(
         logging.info(
             f"query_range {PromCache.len_results(results_offset)}: {keystring}"
         )
+    elif job.end_time is None:
+        logging.info(f"no_end_time: {keystring}")
     else:
         raise RuntimeError(
             f"\n\n"
