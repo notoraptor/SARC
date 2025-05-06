@@ -231,15 +231,24 @@ class PromCache:
         d1_str = json.dumps(dict1, indent=1, sort_keys=True)
         d2_str = json.dumps(dict2, indent=1, sort_keys=True)
 
-        diff = difflib.unified_diff(
-            d1_str.splitlines(),
-            d2_str.splitlines(),
-            fromfile="dict1",
-            tofile="dict2",
-            lineterm="",
+        diff = list(
+            difflib.unified_diff(
+                d1_str.splitlines(),
+                d2_str.splitlines(),
+                fromfile="dict1",
+                tofile="dict2",
+                lineterm="",
+            )
         )
 
-        return "\n".join(diff)
+        text = "\n".join(diff)
+        if len(diff) <= 100:
+            return text
+        else:
+            output_path = "out.diff"
+            with open(output_path, mode="w", encoding="utf-8") as file:
+                file.write(text)
+            return f"({len(diff)} diff lines saved in {output_path})"
 
 
 # pylint: disable=too-many-branches
