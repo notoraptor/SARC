@@ -265,8 +265,8 @@ class CachedFunction:  # pylint: disable=too-many-instance-attributes
                 diff = difflib.unified_diff(
                     d1_str.splitlines(),
                     d2_str.splitlines(),
-                    fromfile="dict1",
-                    tofile="dict2",
+                    fromfile="cached",
+                    tofile="value",
                     lineterm="",
                 )
                 difference = "\n".join(diff)

@@ -57,6 +57,9 @@ def get_job_time_series(
         max_points=max_points,
         measure=measure,
         aggregation=aggregation,
+        # Use CachePolicy.check
+        # to check if cached values are
+        # identical to live results
         cache_policy=CachePolicy.check,
     )
     if dataframe:
@@ -136,7 +139,6 @@ def _get_job_time_series_data(
 
         query = f"{query}[{range_seconds}s]"
         if "(" in measure:
-            # NB: This case is never used nor tested anywhere
             query = measure.format(f"{query} {offset_string}")
         else:
             query = f"{measure}({query} {offset_string})"
@@ -157,6 +159,9 @@ def _get_job_time_series_data_cache_key(
     aggregation: str = "total",
 ):
     if job.end_time is None:
+        # If job.end_time is None, then Prometheus queries
+        # are based on current time (now).
+        # We should not cache such results.
         return None
 
     fmt = "%Y-%m-%dT%Hh%Mm%Ss"
