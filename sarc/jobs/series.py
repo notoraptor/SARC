@@ -11,7 +11,7 @@ import pandas
 from pandas import DataFrame
 from prometheus_api_client import MetricRangeDataFrame
 
-from sarc.cache import with_cache
+from sarc.cache import CachePolicy, with_cache
 from sarc.client.job import JobStatistics, SlurmJob, Statistics
 from sarc.config import MTL, UTC, ClusterConfig, config
 from sarc.traces import trace_decorator
@@ -57,6 +57,7 @@ def get_job_time_series(
         max_points=max_points,
         measure=measure,
         aggregation=aggregation,
+        cache_policy=CachePolicy.check,
     )
     if dataframe:
         return MetricRangeDataFrame(results) if results else None
