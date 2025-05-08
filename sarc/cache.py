@@ -277,7 +277,11 @@ class CachedFunction:  # pylint: disable=too-many-instance-attributes
                     f"Value:\n"
                     f"{repr(value)}\n"
                 )
-            raise CacheException(f"\nCached result != live result:\n\n{difference}\n")
+            raise CacheException(
+                f"\nCached result != live result:\n"
+                f"Key: {key_value}\n\n"
+                f"{difference}\n"
+            )
 
         # Whether to save the cache
         if key_value is None:
