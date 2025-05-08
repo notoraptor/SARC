@@ -146,7 +146,7 @@ def _get_job_time_series_data(
     else:
         query = f"{query}[{duration_seconds}s:{interval}s] {offset_string}"
 
-    logging.info(f"prometheus query with offset: {query}")
+    logging.info(f"prometheus query with offset ({job.job_state}): {query}")
     return job.fetch_cluster_config().prometheus.custom_query(query)
 
 
