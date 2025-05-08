@@ -275,10 +275,10 @@ def sacct_mongodb_import(
             )
         )
         if jobs:
-            for job in jobs:
+            for i, job in enumerate(jobs):
                 if entry != job:
                     kn = f"{entry.cluster_name}/{entry.job_id}"
-                    logging.warning(f"Job changed: {kn}")
+                    logging.warning(f"Job changed ({i + 1}/{len(jobs)}): {kn}")
                     import difflib
                     import pprint
 
