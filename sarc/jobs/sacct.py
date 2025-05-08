@@ -281,8 +281,10 @@ def sacct_mongodb_import(
                     import difflib
                     import pprint
 
-                    job_str = pprint.pformat(job.dict())
-                    entry_str = pprint.pformat(entry.dict())
+                    job_str = pprint.pformat(job.dict(exclude={"stored_statistics"}))
+                    entry_str = pprint.pformat(
+                        entry.dict(exclude={"stored_statistics"})
+                    )
 
                     diff = difflib.unified_diff(
                         job_str.splitlines(),
