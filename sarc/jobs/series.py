@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import os
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -11,7 +11,7 @@ import pandas
 from pandas import DataFrame
 from prometheus_api_client import MetricRangeDataFrame
 
-from sarc.cache import CachePolicy, with_cache
+from sarc.cache import with_cache
 from sarc.client.job import JobStatistics, SlurmJob, Statistics
 from sarc.config import MTL, UTC, ClusterConfig, config
 from sarc.traces import trace_decorator
@@ -31,105 +31,9 @@ def get_job_time_series(
     aggregation: str = "total",
     dataframe: bool = True,
 ):
-    results_offset = _get_job_time_series(
-        job, metric, min_interval, max_points, measure, aggregation, dataframe=False
-    )
-
-    # We don't cache if end_time is not available.
-    if job.end_time is not None:
-        results_range = _get_job_time_series_using_query_range(
-            job, metric, min_interval, max_points, measure, aggregation, dataframe=False
-        )
-
-        fmt = "%Y-%m-%dT%Hh%Mm%Ss"
-        keystring = (
-            f"{job.cluster_name}"
-            f".{job.job_id}"
-            f".from-{job.start_time.strftime(fmt) if job.start_time else None}"
-            f".to-{job.end_time.strftime(fmt) if job.end_time else None}"
-            f".{metric}"
-            f".min-interval-{min_interval}s"
-            f".max-points-{max_points}"
-            f".{f'measure-{measure}-{aggregation}' if measure else 'no_measure'}"
-            f".json"
-        )
-
-        if results_offset == results_range:
-            logging.info(
-                f"range valid {PromCache.len_results(results_offset)}: {keystring}"
-            )
-        else:
-            folder = ".prometheus_cache_errors"
-            os.makedirs(folder, exist_ok=True)
-            output_path = os.path.join(folder, f"{keystring}.err")
-            with open(output_path, mode="w", encoding="utf-8") as file:
-                file.write(
-                    f"\n\n"
-                    f"Results with offset {PromCache.len_results(results_offset)} "
-                    f"!= Results with query range {PromCache.len_results(results_range)}\n"
-                    f"Keystring: {keystring}\n\n"
-                    f"{PromCache.diff(results_offset, results_range)}\n"
-                )
-            logging.warning(
-                f"with_offset {PromCache.len_results(results_offset)} "
-                f"!= with_query_range {PromCache.len_results(results_range)}"
-                f": {keystring}"
-            )
-
-    results = results_offset
-    if dataframe:
-        return MetricRangeDataFrame(results) if results else None
-    else:
-        return results
-
-
-class PromCache:
-    @classmethod
-    def len_results(cls, results: list):
-        return [len(data["values"]) for data in results]
-
-    @classmethod
-    def diff(cls, dict1, dict2, save_long_diff=False):
-        import difflib
-
-        d1_str = json.dumps(dict1, indent=1, sort_keys=True)
-        d2_str = json.dumps(dict2, indent=1, sort_keys=True)
-
-        diff = list(
-            difflib.unified_diff(
-                d1_str.splitlines(),
-                d2_str.splitlines(),
-                fromfile="dict1",
-                tofile="dict2",
-                lineterm="",
-            )
-        )
-
-        text = "\n".join(diff)
-        if len(diff) > 100 and save_long_diff:
-            output_path = "out.diff"
-            with open(output_path, mode="w", encoding="utf-8") as file:
-                file.write(text)
-            return f"({len(diff)} diff lines saved in {output_path})"
-        else:
-            return text
-
-
-# pylint: disable=too-many-branches
-@trace_decorator()
-def _get_job_time_series_using_query_range(
-    job: SlurmJob,
-    metric: str,
-    min_interval: int = 30,
-    max_points: int = 100,
-    measure: str | None = None,
-    aggregation: str = "total",
-    dataframe: bool = True,
-):
     """Fetch job metrics.
 
     Arguments:
-        cluster: The cluster on which to fetch metrics.
         job: The job for which to fetch metrics.
         metric: The metric, which must be in ``slurm_job_metric_names``.
         min_interval: The minimal reporting interval, in seconds.
@@ -142,68 +46,17 @@ def _get_job_time_series_using_query_range(
         dataframe: If True, return a DataFrame. Otherwise, return the list of
             dicts returned by Prometheus's API.
     """
-
-    if aggregation not in ("interval", "total", None):
-        raise ValueError(
-            f"Aggregation must be one of ['total', 'interval', None]: {aggregation}"
-        )
-
-    if job.job_state != "RUNNING" and not job.elapsed_time:
-        return None if dataframe else []
-    if metric not in slurm_job_metric_names:
-        raise ValueError(f"Unknown metric name: {metric}")
-
-    selector = f'{metric}{{slurmjobid=~"{job.job_id}"}}'
-
-    now = datetime.now(tz=UTC).astimezone(MTL)
-
-    if job.end_time and job.end_time <= now:
-        duration = job.end_time - job.start_time
-        end_time = job.end_time
-    else:
-        # Duration should not be looking in the future
-        duration = now - job.start_time
-        end_time = now
-
-    duration_seconds = int(duration.total_seconds())
-
-    if duration_seconds <= 0:
-        return None if dataframe else []
-
-    interval = int(max(duration_seconds / max_points, min_interval))
-
-    if measure and aggregation:
-        if aggregation == "interval":
-            range_seconds = interval
-        elif aggregation == "total":
-            range_seconds = duration_seconds
-        else:
-            raise ValueError(f"Unknown aggregation: {aggregation}")
-
-        selector_with_range = f"{selector}[{range_seconds}s]"
-        if "(" in measure:
-            # NB: This case is never used nor tested anywhere
-            nested_query = measure.format(selector_with_range)
-        else:
-            nested_query = f"{measure}({selector_with_range})"
-        query = f"{nested_query}[{duration_seconds}s:{range_seconds}s]"
-        # Query range must cover only range_seconds from end_time.
-        start_time = end_time - timedelta(seconds=range_seconds)
-        step_seconds = range_seconds
-    else:
-        query = selector
-        # Query range must cover entire job time.
-        start_time = job.start_time
-        step_seconds = interval
-
-    logging.info(
-        f"query/range: {query} start={start_time} end={end_time} (now? {end_time == now}) step={step_seconds}"
-    )
-    results = job.fetch_cluster_config().prometheus.custom_query_range(
-        query=query,
-        start_time=start_time,
-        end_time=end_time,
-        step=f"{step_seconds}s",
+    results = with_cache(
+        _get_job_time_series_data,
+        key=_get_job_time_series_data_cache_key,
+        subdirectory="prometheus",
+    )(
+        job=job,
+        metric=metric,
+        min_interval=min_interval,
+        max_points=max_points,
+        measure=measure,
+        aggregation=aggregation,
     )
     if dataframe:
         return MetricRangeDataFrame(results) if results else None
@@ -213,19 +66,17 @@ def _get_job_time_series_using_query_range(
 
 # pylint: disable=too-many-branches
 @trace_decorator()
-def _get_job_time_series(
+def _get_job_time_series_data(
     job: SlurmJob,
     metric: str,
     min_interval: int = 30,
     max_points: int = 100,
     measure: str | None = None,
     aggregation: str = "total",
-    dataframe: bool = True,
-):
+) -> list:
     """Fetch job metrics.
 
     Arguments:
-        cluster: The cluster on which to fetch metrics.
         job: The job for which to fetch metrics.
         metric: The metric, which must be in ``slurm_job_metric_names``.
         min_interval: The minimal reporting interval, in seconds.
@@ -235,8 +86,6 @@ def _get_job_time_series(
             to get the median.
         aggregation: Either "total", to aggregate over the whole range, or
             "interval", to aggregate over each interval.
-        dataframe: If True, return a DataFrame. Otherwise, return the list of
-            dicts returned by Prometheus's API.
     """
 
     if aggregation not in ("interval", "total", None):
@@ -245,7 +94,7 @@ def _get_job_time_series(
         )
 
     if job.job_state != "RUNNING" and not job.elapsed_time:
-        return None if dataframe else []
+        return []
     if metric not in slurm_job_metric_names:
         raise ValueError(f"Unknown metric name: {metric}")
 
@@ -266,7 +115,7 @@ def _get_job_time_series(
         duration_seconds += offset
 
     if duration_seconds <= 0:
-        return None if dataframe else []
+        return []
 
     interval = int(max(duration_seconds / max_points, min_interval))
 
@@ -294,12 +143,33 @@ def _get_job_time_series(
     else:
         query = f"{query}[{duration_seconds}s:{interval}s] {offset_string}"
 
-    logging.info(f"query/offset: {query}")
-    results = job.fetch_cluster_config().prometheus.custom_query(query)
-    if dataframe:
-        return MetricRangeDataFrame(results) if results else None
-    else:
-        return results
+    logging.info(f"prometheus query with offset: {query}")
+    return job.fetch_cluster_config().prometheus.custom_query(query)
+
+
+def _get_job_time_series_data_cache_key(
+    job: SlurmJob,
+    metric: str,
+    min_interval: int = 30,
+    max_points: int = 100,
+    measure: str | None = None,
+    aggregation: str = "total",
+):
+    if job.end_time is None:
+        return None
+
+    fmt = "%Y-%m-%dT%Hh%Mm%Ss"
+    return (
+        f"{job.cluster_name}"
+        f".{job.job_id}"
+        f".from-{job.start_time.strftime(fmt)}"
+        f".to-{job.end_time.strftime(fmt)}"
+        f".{metric}"
+        f".min-interval-{min_interval}s"
+        f".max-points-{max_points}"
+        f".{f'measure-{measure}-{aggregation}' if measure and aggregation else 'no_measure'}"
+        f".json"
+    )
 
 
 def get_job_time_series_metric_names():
