@@ -277,20 +277,20 @@ def sacct_mongodb_import(
         if jobs:
             for job in jobs:
                 if entry != job:
-                    logging.warning(f"Job changed: {entry.cluster_name}/{entry.job_id}")
+                    kn = f"{entry.cluster_name}/{entry.job_id}"
+                    logging.warning(f"Job changed: {kn}")
                     import difflib
                     import pprint
 
-                    job_str = pprint.pformat(job.dict(exclude={"stored_statistics"}))
-                    entry_str = pprint.pformat(
-                        entry.dict(exclude={"stored_statistics"})
-                    )
+                    exclude = {"stored_statistics", "id"}
+                    job_str = pprint.pformat(job.dict(exclude=exclude))
+                    entry_str = pprint.pformat(entry.dict(exclude=exclude))
 
                     diff = difflib.unified_diff(
                         job_str.splitlines(),
                         entry_str.splitlines(),
-                        fromfile="job",
-                        tofile="entry",
+                        fromfile=f"job {kn}",
+                        tofile=f"entry {kn}",
                         lineterm="",
                     )
                     difference = "\n".join(diff)
