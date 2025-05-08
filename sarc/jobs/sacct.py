@@ -278,6 +278,21 @@ def sacct_mongodb_import(
             for job in jobs:
                 if entry != job:
                     logging.warning(f"Job changed: {entry.cluster_name}/{entry.job_id}")
+                    import difflib
+                    import pprint
+
+                    job_str = pprint.pformat(job.dict())
+                    entry_str = pprint.pformat(entry.dict())
+
+                    diff = difflib.unified_diff(
+                        job_str.splitlines(),
+                        entry_str.splitlines(),
+                        fromfile="job",
+                        tofile="entry",
+                        lineterm="",
+                    )
+                    difference = "\n".join(diff)
+                    print(difference)
 
         saved = False
         if not no_prometheus:
