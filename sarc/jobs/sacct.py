@@ -269,6 +269,16 @@ def sacct_mongodb_import(
         f"Saving into mongodb collection '{collection.Meta.collection_name}'..."
     )
     for entry in tqdm(scraper):
+        jobs = list(
+            collection.find_by(
+                {"cluster_name": entry.cluster_name, "job_id": entry.job_id}
+            )
+        )
+        if jobs:
+            for job in jobs:
+                if entry != job:
+                    logging.warning(f"Job changed: {entry.cluster_name}/{entry.job_id}")
+
         saved = False
         if not no_prometheus:
             update_allocated_gpu_type(cluster, entry)

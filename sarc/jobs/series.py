@@ -148,7 +148,9 @@ def _get_job_time_series_data(
 
     results = job.fetch_cluster_config().prometheus.custom_query(query)
     nb_results = [len(data["values"]) for data in results]
-    logging.info(f"prometheus query with offset ({job.job_state} {nb_results}): {query}")
+    logging.info(
+        f"prometheus query with offset ({job.job_state} {nb_results}): {query}"
+    )
     return results
 
 
