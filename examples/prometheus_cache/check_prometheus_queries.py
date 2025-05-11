@@ -18,7 +18,7 @@ def main():
     with open(sys.argv[1], encoding="utf-8") as file:
         job_identifiers: List[Tuple[str, int]] = json.load(file)
 
-    with mock.patch("sarc.job.series.get_job_time_series", new=new_get_job_time_series):
+    with mock.patch("sarc.jobs.series.get_job_time_series", new=new_get_job_time_series):
         for i, (cluster_name, job_id) in enumerate(job_identifiers):
             print(f"[{i + 1}/{len(job_identifiers)}]", cluster_name, job_id)
             job = get_job(cluster=cluster_name, job_id=job_id)
