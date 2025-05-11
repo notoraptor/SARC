@@ -102,7 +102,7 @@ class PromCache:
                 f"{data1} {self.len_results(data1.data)} "
                 f"!= {data2} {self.len_results(data2.data)}"
             )
-            logging.warning(message)
+            logging.warning(f"{message} : {keystring}")
             output_path = os.path.join(
                 self.folder, f"{keystring}.{data1}-vs-{data2}.err"
             )
