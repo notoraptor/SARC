@@ -17,7 +17,6 @@ from sarc.jobs.series import (
 from sarc.traces import trace_decorator
 
 
-# pylint: disable=too-many-branches
 @trace_decorator()
 def new_get_job_time_series(
     job: SlurmJob,
@@ -28,7 +27,11 @@ def new_get_job_time_series(
     aggregation: str = "total",
     dataframe: bool = True,
 ):
-    results_offset = _get_job_time_series_data(
+    cache = PromCache()
+    cache_offset = PromCache("offset")
+    cache_range = PromCache("range")
+
+    results = results_offset = _get_job_time_series_data(
         job, metric, min_interval, max_points, measure, aggregation
     )
 
@@ -41,37 +44,76 @@ def new_get_job_time_series(
             job, metric, min_interval, max_points, measure, aggregation
         )
 
-        if results_offset == results_range:
-            logging.info(
-                f"range valid {PromCache.len_results(results_offset)}: {keystring}"
-            )
+        saved_offset = Data(cache_offset.get_cache(keystring), "saved_offset")
+        saved_range = Data(cache_range.get_cache(keystring), "saved_range")
+        data_results_offset = Data(results_offset, "results_offset")
+        data_results_range = Data(results_range, "results_range")
+
+        if saved_offset:
+            cache.compare(keystring, saved_offset, data_results_offset)
+            cache.compare(keystring, saved_offset, data_results_range)
         else:
-            logging.warning(
-                f"with_offset {PromCache.len_results(results_offset)} "
-                f"!= with_query_range {PromCache.len_results(results_range)}"
-                f": {keystring}"
-            )
+            cache_offset.set_cache(keystring, results_offset)
+        if saved_range:
+            cache.compare(keystring, saved_range, data_results_range)
+            cache.compare(keystring, saved_range, data_results_offset)
+        else:
+            cache_range.set_cache(keystring, results_range)
+        cache.compare(keystring, data_results_offset, data_results_range)
 
-            folder = ".prometheus_cache_errors"
-            os.makedirs(folder, exist_ok=True)
-            output_path = os.path.join(folder, f"{keystring}.err")
-            with open(output_path, mode="w", encoding="utf-8") as file:
-                file.write(
-                    f"\n\n"
-                    f"Results with offset {PromCache.len_results(results_offset)} "
-                    f"!= Results with query range {PromCache.len_results(results_range)}\n"
-                    f"Keystring: {keystring}\n\n"
-                    f"{PromCache.diff(results_offset, results_range)}\n"
-                )
-
-    results = results_offset
     if dataframe:
         return MetricRangeDataFrame(results) if results else None
     else:
         return results
 
 
+# pylint: disable=too-many-branches
+class Data:
+    __slots__ = ("data", "name")
+
+    def __init__(self, data: list, name: str):
+        self.data = data
+        self.name = name
+
+    def __str__(self):
+        return self.name
+
+    def __repr__(self):
+        return repr(self.name)
+
+    def __bool__(self):
+        return bool(self.data)
+
+    def __eq__(self, other):
+        return self.data == other.data
+
+    def __ne__(self, other):
+        return self.data != other.data
+
+
 class PromCache:
+    def __init__(self, name=""):
+        self.folder = f".prometheus_cache" + (f".{name}" if name else "")
+        os.makedirs(self.folder, exist_ok=True)
+
+    def compare(self, keystring: str, data1: Data, data2: Data):
+        if data1 != data2:
+            message = (
+                f"{data1} {self.len_results(data1.data)} "
+                f"!= {data2} {self.len_results(data2.data)}"
+            )
+            logging.warning(message)
+            output_path = os.path.join(
+                self.folder, f"{keystring}.{data1}-vs-{data2}.err"
+            )
+            with open(output_path, mode="w", encoding="utf-8") as file:
+                file.write(
+                    f"\n\n"
+                    f"{message}\n"
+                    f"Keystring: {keystring}\n\n"
+                    f"{PromCache.diff(data1.data, data2.data)}\n"
+                )
+
     @classmethod
     def len_results(cls, results: list):
         return [len(data["values"]) for data in results]
@@ -101,6 +143,21 @@ class PromCache:
             return f"({len(diff)} diff lines saved in {output_path})"
         else:
             return text
+
+    def get_cache_path(self, key):
+        return os.path.join(self.folder, key)
+
+    def set_cache(self, key, results):
+        path = self.get_cache_path(key)
+        with open(path, mode="w", encoding="utf-8") as file:
+            json.dump(results, file)
+
+    def get_cache(self, key):
+        path = self.get_cache_path(key)
+        if os.path.isfile(path):
+            with open(path, encoding="utf-8") as file:
+                return json.load(file)
+        return None
 
 
 # pylint: disable=too-many-branches
