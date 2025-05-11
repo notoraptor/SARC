@@ -4,10 +4,10 @@ import sys
 from typing import List, Tuple
 from unittest import mock
 
+from series_with_query_range import new_get_job_time_series
+
 from sarc.client.job import SlurmJob, get_job
 from sarc.config import scraping_mode_required
-
-from series_with_query_range import new_get_job_time_series
 
 
 @scraping_mode_required
@@ -18,7 +18,9 @@ def main():
     with open(sys.argv[1], encoding="utf-8") as file:
         job_identifiers: List[Tuple[str, int]] = json.load(file)
 
-    with mock.patch("sarc.jobs.series.get_job_time_series", new=new_get_job_time_series):
+    with mock.patch(
+        "sarc.jobs.series.get_job_time_series", new=new_get_job_time_series
+    ):
         for i, (cluster_name, job_id) in enumerate(job_identifiers):
             print(f"[{i + 1}/{len(job_identifiers)}]", cluster_name, job_id)
             job = get_job(cluster=cluster_name, job_id=job_id)
@@ -28,6 +30,7 @@ def main():
 
 def _get_gpu_type(entry: SlurmJob):
     from sarc.jobs.series import get_job_time_series
+
     assert get_job_time_series is new_get_job_time_series
 
     output = get_job_time_series(

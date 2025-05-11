@@ -38,7 +38,7 @@ def new_get_job_time_series(
     )
     if keystring is not None:
         results_range = _get_job_time_series_using_query_range(
-            job, metric, min_interval, max_points, measure, aggregation, dataframe=False
+            job, metric, min_interval, max_points, measure, aggregation
         )
 
         if results_offset == results_range:
