@@ -293,8 +293,7 @@ def sacct_mongodb_import(
                         tofile=f"entry {kn}",
                         lineterm="",
                     )
-                    difference = "\n".join(diff)
-                    print(difference)
+                    print("\n".join(diff))
 
         saved = False
         if not no_prometheus:
