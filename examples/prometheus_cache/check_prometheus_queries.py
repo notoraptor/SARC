@@ -7,7 +7,7 @@ from unittest import mock
 from sarc.client.job import SlurmJob, get_job
 from sarc.config import scraping_mode_required
 
-from .series_with_query_range import new_get_job_time_series
+from series_with_query_range import new_get_job_time_series
 
 
 @scraping_mode_required
