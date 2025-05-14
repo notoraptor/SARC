@@ -57,13 +57,15 @@ def main():
         }
 
         for metric in metrics:
-            if data[metric] == one_results[metric]:
+            data_metric = data[metric]
+            one_result_metric = one_results[metric]
+            if data_metric == one_result_metric:
                 print("IDENTICAL", metric)
                 print()
             else:
-                print(f"DIFF {metric}")
+                print(f"DIFF {metric} {PromCache.len_results(data_metric)} vs {PromCache.len_results(one_result_metric)}")
                 print("=" * 90)
-                print(PromCache.diff(data[metric], one_results[metric]))
+                print(PromCache.diff(data_metric, one_result_metric))
 
 
 if __name__ == "__main__":
