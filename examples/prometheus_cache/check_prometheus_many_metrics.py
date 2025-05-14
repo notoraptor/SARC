@@ -5,7 +5,7 @@ import sys
 from typing import List, Tuple
 from unittest import mock
 
-from series_with_query_range import new_get_job_time_series
+from series_with_query_range import PromCache, new_get_job_time_series
 
 from sarc.client.job import SlurmJob, get_job
 from sarc.config import scraping_mode_required
@@ -52,15 +52,18 @@ def main():
         if all_metrics:
             print("missing:", all_metrics)
 
-        one_result = _get_job_time_series_data(job, "slurm_job_core_usage")
+        one_results = {
+            metric: _get_job_time_series_data(job, metric) for metric in metrics
+        }
 
-        print("ONE_RESULT: slurm_job_core_usage")
-        print("=" * 80)
-        print(one_result)
-        print()
-        print("RESULTS")
-        print("=" * 80)
-        pprint.pprint(data)
+        for metric in metrics:
+            if data[metric] == one_results[metric]:
+                print("IDENTICAL", metric)
+                print()
+            else:
+                print(f"DIFF {metric}")
+                print("=" * 90)
+                print(PromCache.diff(data[metric], one_results[metric]))
 
 
 if __name__ == "__main__":
