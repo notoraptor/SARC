@@ -53,7 +53,8 @@ def main():
             print("missing:", all_metrics)
 
         one_results = {
-            metric: _get_job_time_series_data(job, metric) for metric in metrics
+            metric: _get_job_time_series_data(job, metric, max_points=10_000)
+            for metric in metrics
         }
 
         for metric in metrics:
@@ -63,7 +64,9 @@ def main():
                 print("IDENTICAL", metric)
                 print()
             else:
-                print(f"DIFF {metric} {PromCache.len_results(data_metric)} vs {PromCache.len_results(one_result_metric)}")
+                print(
+                    f"DIFF {metric} {PromCache.len_results(data_metric)} vs {PromCache.len_results(one_result_metric)}"
+                )
                 print("=" * 90)
                 print(PromCache.diff(data_metric, one_result_metric))
 
