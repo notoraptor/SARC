@@ -38,7 +38,7 @@ def main():
             max_points=10_000,
         )
 
-        one_result = _get_job_time_series_data(job, '"slurm_job_utilization_gpu"')
+        one_result = _get_job_time_series_data(job, "slurm_job_utilization_gpu")
 
         print('ONE_RESULT "slurm_job_utilization_gpu"')
         print('=' * 80)
