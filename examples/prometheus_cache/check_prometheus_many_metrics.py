@@ -70,7 +70,11 @@ def main():
         for metric in metrics:
             data_metric = data[metric]
             one_result_metric = one_results[metric]
-            if data_metric != one_result_metric:
+            if data_metric == one_result_metric:
+                logging.info(
+                    f"Identical: {metric}, {PromCache.len_results(data_metric)} vs {PromCache.len_results(one_result_metric)}"
+                )
+            else:
                 message = f"DIFF {metric} {PromCache.len_results(data_metric)} vs {PromCache.len_results(one_result_metric)}"
                 logging.info(message)
                 print(message)
