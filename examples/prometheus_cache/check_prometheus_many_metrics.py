@@ -46,7 +46,7 @@ def main():
             assert metric in all_metrics, metric
             all_metrics.remove(metric)
             data[metric].append(result)
-        assert not all_metrics
+        assert not all_metrics, all_metrics
 
         one_result = _get_job_time_series_data(job, "slurm_job_utilization_gpu")
 
