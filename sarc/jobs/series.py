@@ -4,7 +4,7 @@ import json
 import logging
 import os
 from datetime import datetime
-from typing import Callable, List, Sequence, Union
+from typing import Callable, Dict, List, Sequence, Union
 
 import numpy as np
 import pandas
@@ -184,12 +184,12 @@ def _get_job_time_series_data_from_metrics(
     max_points: int = 100,
     measure: str | None = None,
     aggregation: str = "total",
-) -> list:
-    """Fetch job metrics.
+) -> Dict[str, List[dict]]:
+    """Fetch job metrics for many metrics at once.
 
     Arguments:
         job: The job for which to fetch metrics.
-        metric: The metric, which must be in ``slurm_job_metric_names``.
+        metrics: The metrics, which must be in ``slurm_job_metric_names``.
         min_interval: The minimal reporting interval, in seconds.
         max_points: The maximal number of data points to return.
         measure: The aggregation measure to use ("avg_over_time", etc.)
@@ -198,18 +198,20 @@ def _get_job_time_series_data_from_metrics(
         aggregation: Either "total", to aggregate over the whole range, or
             "interval", to aggregate over each interval.
     """
-    if aggregation not in ("interval", "total", None):
-        raise ValueError(
-            f"Aggregation must be one of ['total', 'interval', None]: {aggregation}"
-        )
-
-    if job.job_state != "RUNNING" and not job.elapsed_time:
-        return []
     if not metrics:
         raise ValueError("No metrics given")
     for metric in metrics:
         if metric not in slurm_job_metric_names:
             raise ValueError(f"Unknown metric name: {metric}")
+    if aggregation not in ("interval", "total", None):
+        raise ValueError(
+            f"Aggregation must be one of ['total', 'interval', None]: {aggregation}"
+        )
+
+    metric_to_data = {metric: [] for metric in metrics}
+
+    if job.job_state != "RUNNING" and not job.elapsed_time:
+        return metric_to_data
 
     label_exprs = [
         f'__name__=~"^({ "|".join(metrics) })$"',
@@ -232,7 +234,7 @@ def _get_job_time_series_data_from_metrics(
         duration_seconds += offset
 
     if duration_seconds <= 0:
-        return []
+        return metric_to_data
 
     interval = int(max(duration_seconds / max_points, min_interval))
 
@@ -260,7 +262,9 @@ def _get_job_time_series_data_from_metrics(
         query = f"{query}[{duration_seconds}s:{interval}s] {offset_string}"
 
     logging.info(f"prometheus query with offset: {query}")
-    return job.fetch_cluster_config().prometheus.custom_query(query)
+    for result in job.fetch_cluster_config().prometheus.custom_query(query):
+        metric_to_data[result["metric"]["__name__"]].append(result)
+    return metric_to_data
 
 
 def get_job_time_series_metric_names():
