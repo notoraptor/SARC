@@ -49,7 +49,7 @@ def main():
         job_identifiers: List[Tuple[str, int]] = json.load(file)
 
     for i, (cluster_name, job_id) in enumerate(job_identifiers):
-        logging.info(f"[{i + 1}/{len(job_identifiers)}]", cluster_name, job_id)
+        logging.info(f"[{i + 1}/{len(job_identifiers)}] {cluster_name} {job_id}")
         job = get_job(cluster=cluster_name, job_id=job_id)
 
         with Profiler() as pf_one_results:
