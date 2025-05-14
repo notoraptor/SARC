@@ -37,6 +37,11 @@ def main():
     for i, (cluster_name, job_id) in enumerate(job_identifiers):
         print(f"[{i + 1}/{len(job_identifiers)}]", cluster_name, job_id)
         job = get_job(cluster=cluster_name, job_id=job_id)
+
+        one_results = {
+            metric: _get_job_time_series_data(job=job, metric=metric, max_points=10_000)
+            for metric in metrics
+        }
         results = _get_job_time_series_data_from_metrics(
             job=job,
             metrics=metrics,
@@ -51,11 +56,6 @@ def main():
             data[metric].append(result)
         if all_metrics:
             print("missing:", all_metrics)
-
-        one_results = {
-            metric: _get_job_time_series_data(job, metric, max_points=10_000)
-            for metric in metrics
-        }
 
         for metric in metrics:
             data_metric = data[metric]
