@@ -14,6 +14,23 @@ from sarc.jobs.series import (
     _get_job_time_series_data_from_metrics,
 )
 
+import time
+
+
+class Profiler:
+    __slots__ = ("start", "end", "duration")
+
+    def __enter__(self):
+        self.start = time.perf_counter()
+        return self  # peut être utilisé comme "profiler"
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.end = time.perf_counter()
+        self.duration = self.end - self.start
+
+    def __str__(self):
+        return f"{self.duration:.6f} sec"
+
 
 @scraping_mode_required
 def main():
@@ -38,15 +55,21 @@ def main():
         print(f"[{i + 1}/{len(job_identifiers)}]", cluster_name, job_id)
         job = get_job(cluster=cluster_name, job_id=job_id)
 
-        one_results = {
-            metric: _get_job_time_series_data(job=job, metric=metric, max_points=10_000)
-            for metric in metrics
-        }
-        results = _get_job_time_series_data_from_metrics(
-            job=job,
-            metrics=metrics,
-            max_points=10_000,
-        )
+        with Profiler() as pf_one_results:
+            one_results = {
+                metric: _get_job_time_series_data(job=job, metric=metric, max_points=10_000)
+                for metric in metrics
+            }
+        print("Time one results:", pf_one_results)
+
+        with Profiler() as pf_multiple:
+            results = _get_job_time_series_data_from_metrics(
+                job=job,
+                metrics=metrics,
+                max_points=10_000,
+            )
+        print("Time multiple results:", pf_multiple)
+
         data = {metric: [] for metric in metrics}
         all_metrics = set(metrics)
         for result in results:
