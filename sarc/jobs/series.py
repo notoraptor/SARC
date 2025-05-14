@@ -4,7 +4,7 @@ import json
 import logging
 import os
 from datetime import datetime
-from typing import TYPE_CHECKING
+from typing import Callable, List, Sequence, Union
 
 import numpy as np
 import pandas
@@ -15,9 +15,6 @@ from sarc.cache import CachePolicy, with_cache
 from sarc.client.job import JobStatistics, SlurmJob, Statistics
 from sarc.config import MTL, UTC, ClusterConfig, config
 from sarc.traces import trace_decorator
-
-if TYPE_CHECKING:
-    pass
 
 
 # pylint: disable=too-many-branches
@@ -178,6 +175,94 @@ def _get_job_time_series_data_cache_key(
     )
 
 
+# pylint: disable=too-many-branches
+@trace_decorator()
+def _get_job_time_series_data_from_metrics(
+    job: SlurmJob,
+    metrics: Sequence[str],
+    min_interval: int = 30,
+    max_points: int = 100,
+    measure: str | None = None,
+    aggregation: str = "total",
+) -> list:
+    """Fetch job metrics.
+
+    Arguments:
+        job: The job for which to fetch metrics.
+        metric: The metric, which must be in ``slurm_job_metric_names``.
+        min_interval: The minimal reporting interval, in seconds.
+        max_points: The maximal number of data points to return.
+        measure: The aggregation measure to use ("avg_over_time", etc.)
+            A format string can be passed, e.g. ("quantile_over_time(0.5, {})")
+            to get the median.
+        aggregation: Either "total", to aggregate over the whole range, or
+            "interval", to aggregate over each interval.
+    """
+    if aggregation not in ("interval", "total", None):
+        raise ValueError(
+            f"Aggregation must be one of ['total', 'interval', None]: {aggregation}"
+        )
+
+    if job.job_state != "RUNNING" and not job.elapsed_time:
+        return []
+    if not metrics:
+        raise ValueError("No metrics given")
+    for metric in metrics:
+        if metric not in slurm_job_metric_names:
+            raise ValueError(f"Unknown metric name: {metric}")
+
+    label_exprs = [
+        f'__name__=~"^({ "|".join(metrics) })$"',
+        f'slurmjobid="{job.job_id}"',
+    ]
+    selector = "{" + ", ".join(label_exprs) + "}"
+
+    now = datetime.now(tz=UTC).astimezone(MTL)
+
+    ago = now - job.start_time
+    duration = (job.end_time or now) - job.start_time
+
+    offset = int((ago - duration).total_seconds())
+    offset_string = f" offset {offset}s" if offset > 0 else ""
+
+    duration_seconds = int(duration.total_seconds())
+
+    # Duration should not be looking in the future
+    if offset < 0:
+        duration_seconds += offset
+
+    if duration_seconds <= 0:
+        return []
+
+    interval = int(max(duration_seconds / max_points, min_interval))
+
+    query = selector
+
+    if measure and aggregation:
+        if aggregation == "interval":
+            range_seconds = interval
+        elif aggregation == "total":
+            # NB: `offset` has already been used above to generate `offset_string`
+            # and is not used anymore later in this function. So, following line
+            # does not have any effect.
+            offset += duration_seconds
+            range_seconds = duration_seconds
+        else:
+            raise ValueError(f"Unknown aggregation: {aggregation}")
+
+        query = f"{query}[{range_seconds}s]"
+        if "(" in measure:
+            query = measure.format(f"{query} {offset_string}")
+        else:
+            query = f"{measure}({query} {offset_string})"
+        query = f"{query}[{duration_seconds}s:{range_seconds}s]"
+    else:
+        query = f"{query}[{duration_seconds}s:{interval}s] {offset_string}"
+
+    logging.info(f"prometheus query with offset: {query}")
+    return job.fetch_cluster_config().prometheus.custom_query(query)
+
+
 def get_job_time_series_metric_names():
     """Return all the metric names that relate to slurm jobs."""
     return slurm_job_metric_names
@@ -187,10 +272,13 @@ def get_job_time_series_metric_names():
 def compute_job_statistics_from_dataframe(
     df: DataFrame,
     statistics,
-    normalization=float,
+    normalization: Callable[[float], float] = float,
     unused_threshold=0.01,
     is_time_counter=False,
 ):
+    if df is None:
+        return None
+
     df = df.reset_index()
 
     groupby = ["instance", "core", "gpu"]
@@ -322,6 +410,113 @@ def compute_job_statistics(job: SlurmJob):
         statistics=statistics_dict,
         normalization=lambda x: float(x / 1e6 / job.allocated.mem),
         unused_threshold=None,
+    )
+
+    return JobStatistics(
+        gpu_utilization=gpu_utilization and Statistics(**gpu_utilization),
+        gpu_utilization_fp16=gpu_utilization_fp16
+        and Statistics(**gpu_utilization_fp16),
+        gpu_utilization_fp32=gpu_utilization_fp32
+        and Statistics(**gpu_utilization_fp32),
+        gpu_utilization_fp64=gpu_utilization_fp64
+        and Statistics(**gpu_utilization_fp64),
+        gpu_sm_occupancy=gpu_sm_occupancy and Statistics(**gpu_sm_occupancy),
+        gpu_memory=gpu_memory and Statistics(**gpu_memory),
+        gpu_power=gpu_power and Statistics(**gpu_power),
+        cpu_utilization=cpu_utilization and Statistics(**cpu_utilization),
+        system_memory=system_memory and Statistics(**system_memory),
+    )
+
+
+@trace_decorator()
+def compute_job_statistics_from_metrics(job: SlurmJob):
+    statistics_dict = {
+        "mean": lambda self: self.mean(),
+        "std": lambda self: self.std(),
+        "max": lambda self: self.max(),
+        "q25": lambda self: self.quantile(0.25),
+        "median": lambda self: self.median(),
+        "q75": lambda self: self.quantile(0.75),
+        "q05": lambda self: self.quantile(0.05),
+    }
+
+    results = _get_job_time_series_data_from_metrics(
+        job=job,
+        metrics=(
+            "slurm_job_utilization_gpu",
+            "slurm_job_fp16_gpu",
+            "slurm_job_fp32_gpu",
+            "slurm_job_fp64_gpu",
+            "slurm_job_sm_occupancy_gpu",
+            "slurm_job_utilization_gpu_memory",
+            "slurm_job_power_gpu",
+            "slurm_job_core_usage",
+            "slurm_job_memory_usage",
+        ),
+        max_points=10_000,
+    )
+    metrics = {}
+
+    gpu_utilization = compute_job_statistics_from_dataframe(
+        metrics["slurm_job_utilization_gpu"],
+        statistics=statistics_dict,
+        unused_threshold=0.01,
+        normalization=lambda x: float(x / 100),
+    )
+
+    gpu_utilization_fp16 = compute_job_statistics_from_dataframe(
+        metrics["slurm_job_fp16_gpu"],
+        statistics=statistics_dict,
+        unused_threshold=0.01,
+        normalization=lambda x: float(x / 100),
+    )
+
+    gpu_utilization_fp32 = compute_job_statistics_from_dataframe(
+        metrics["slurm_job_fp32_gpu"],
+        statistics=statistics_dict,
+        unused_threshold=0.01,
+        normalization=lambda x: float(x / 100),
+    )
+
+    gpu_utilization_fp64 = compute_job_statistics_from_dataframe(
+        metrics["slurm_job_fp64_gpu"],
+        statistics=statistics_dict,
+        unused_threshold=0.01,
+        normalization=lambda x: float(x / 100),
+    )
+
+    gpu_sm_occupancy = compute_job_statistics_from_dataframe(
+        metrics["slurm_job_sm_occupancy_gpu"],
+        statistics=statistics_dict,
+        unused_threshold=0.01,
+        normalization=lambda x: float(x / 100),
+    )
+
+    gpu_memory = compute_job_statistics_from_dataframe(
+        metrics["slurm_job_utilization_gpu_memory"],
+        statistics=statistics_dict,
+        normalization=lambda x: float(x / 100),
+        unused_threshold=False,
+    )
+
+    gpu_power = compute_job_statistics_from_dataframe(
+        metrics["slurm_job_power_gpu"],
+        statistics=statistics_dict,
+        unused_threshold=False,
+    )
+
+    cpu_utilization = compute_job_statistics_from_dataframe(
+        metrics["slurm_job_core_usage"],
+        statistics=statistics_dict,
+        unused_threshold=0.01,
+        is_time_counter=True,
+    )
+
+    system_memory = compute_job_statistics_from_dataframe(
+        metrics["slurm_job_memory_usage"],
+        statistics=statistics_dict,
+        normalization=lambda x: float(x / 1e6 / job.allocated.mem),
+        unused_threshold=False,
     )
 
     return JobStatistics(
