@@ -4,7 +4,7 @@ import json
 import logging
 import os
 from datetime import datetime
-from typing import Callable, Dict, List, Sequence, Union
+from typing import Callable, Dict, List, Sequence
 
 import numpy as np
 import pandas
@@ -345,106 +345,7 @@ def compute_job_statistics(job: SlurmJob):
         "q05": lambda self: self.quantile(0.05),
     }
 
-    gpu_utilization = compute_job_statistics_one_metric(
-        job,
-        "slurm_job_utilization_gpu",
-        statistics=statistics_dict,
-        unused_threshold=0.01,
-        normalization=lambda x: float(x / 100),
-    )
-
-    gpu_utilization_fp16 = compute_job_statistics_one_metric(
-        job,
-        "slurm_job_fp16_gpu",
-        statistics=statistics_dict,
-        unused_threshold=0.01,
-        normalization=lambda x: float(x / 100),
-    )
-
-    gpu_utilization_fp32 = compute_job_statistics_one_metric(
-        job,
-        "slurm_job_fp32_gpu",
-        statistics=statistics_dict,
-        unused_threshold=0.01,
-        normalization=lambda x: float(x / 100),
-    )
-
-    gpu_utilization_fp64 = compute_job_statistics_one_metric(
-        job,
-        "slurm_job_fp64_gpu",
-        statistics=statistics_dict,
-        unused_threshold=0.01,
-        normalization=lambda x: float(x / 100),
-    )
-
-    gpu_sm_occupancy = compute_job_statistics_one_metric(
-        job,
-        "slurm_job_sm_occupancy_gpu",
-        statistics=statistics_dict,
-        unused_threshold=0.01,
-        normalization=lambda x: float(x / 100),
-    )
-
-    gpu_memory = compute_job_statistics_one_metric(
-        job,
-        "slurm_job_utilization_gpu_memory",
-        statistics=statistics_dict,
-        normalization=lambda x: float(x / 100),
-        unused_threshold=None,
-    )
-
-    gpu_power = compute_job_statistics_one_metric(
-        job,
-        "slurm_job_power_gpu",
-        statistics=statistics_dict,
-        unused_threshold=None,
-    )
-
-    cpu_utilization = compute_job_statistics_one_metric(
-        job,
-        "slurm_job_core_usage",
-        statistics=statistics_dict,
-        unused_threshold=0.01,
-        is_time_counter=True,
-    )
-
-    system_memory = compute_job_statistics_one_metric(
-        job,
-        "slurm_job_memory_usage",
-        statistics=statistics_dict,
-        normalization=lambda x: float(x / 1e6 / job.allocated.mem),
-        unused_threshold=None,
-    )
-
-    return JobStatistics(
-        gpu_utilization=gpu_utilization and Statistics(**gpu_utilization),
-        gpu_utilization_fp16=gpu_utilization_fp16
-        and Statistics(**gpu_utilization_fp16),
-        gpu_utilization_fp32=gpu_utilization_fp32
-        and Statistics(**gpu_utilization_fp32),
-        gpu_utilization_fp64=gpu_utilization_fp64
-        and Statistics(**gpu_utilization_fp64),
-        gpu_sm_occupancy=gpu_sm_occupancy and Statistics(**gpu_sm_occupancy),
-        gpu_memory=gpu_memory and Statistics(**gpu_memory),
-        gpu_power=gpu_power and Statistics(**gpu_power),
-        cpu_utilization=cpu_utilization and Statistics(**cpu_utilization),
-        system_memory=system_memory and Statistics(**system_memory),
-    )
-
-
-@trace_decorator()
-def compute_job_statistics_from_metrics(job: SlurmJob):
-    statistics_dict = {
-        "mean": lambda self: self.mean(),
-        "std": lambda self: self.std(),
-        "max": lambda self: self.max(),
-        "q25": lambda self: self.quantile(0.25),
-        "median": lambda self: self.median(),
-        "q75": lambda self: self.quantile(0.75),
-        "q05": lambda self: self.quantile(0.05),
-    }
-
-    results = _get_job_time_series_data_from_metrics(
+    raw_metrics = _get_job_time_series_data_from_metrics(
         job=job,
         metrics=(
             "slurm_job_utilization_gpu",
@@ -459,7 +360,10 @@ def compute_job_statistics_from_metrics(job: SlurmJob):
         ),
         max_points=10_000,
     )
-    metrics = {}
+    metrics = {
+        metric: MetricRangeDataFrame(results) if results else None
+        for metric, results in raw_metrics.items()
+    }
 
     gpu_utilization = compute_job_statistics_from_dataframe(
         metrics["slurm_job_utilization_gpu"],
