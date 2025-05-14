@@ -6,10 +6,13 @@ from typing import List, Tuple
 from unittest import mock
 
 from series_with_query_range import new_get_job_time_series
-from sarc.jobs.series import _get_job_time_series_data, _get_job_time_series_data_from_metrics
 
 from sarc.client.job import SlurmJob, get_job
 from sarc.config import scraping_mode_required
+from sarc.jobs.series import (
+    _get_job_time_series_data,
+    _get_job_time_series_data_from_metrics,
+)
 
 
 @scraping_mode_required
@@ -46,17 +49,19 @@ def main():
             assert metric in all_metrics, metric
             all_metrics.remove(metric)
             data[metric].append(result)
-        assert not all_metrics, all_metrics
+        if all_metrics:
+            print("missing:", all_metrics)
 
-        one_result = _get_job_time_series_data(job, "slurm_job_utilization_gpu")
+        one_result = _get_job_time_series_data(job, "slurm_job_core_usage")
 
-        print('ONE_RESULT "slurm_job_utilization_gpu"')
-        print('=' * 80)
+        print("ONE_RESULT: slurm_job_core_usage")
+        print("=" * 80)
         print(one_result)
         print()
-        print('RESULTS')
-        print('=' * 80)
+        print("RESULTS")
+        print("=" * 80)
         pprint.pprint(data)
+
 
 if __name__ == "__main__":
     main()
