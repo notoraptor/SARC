@@ -8,10 +8,7 @@ from series_with_query_range import PromCache
 
 from sarc.client.job import get_job
 from sarc.config import scraping_mode_required
-from sarc.jobs.series import (
-    _get_job_time_series_data,
-    _get_job_time_series_data_from_metrics,
-)
+from sarc.jobs.series import _get_job_time_series_data
 
 
 class Profiler:
@@ -62,12 +59,13 @@ def main():
         logging.info(f"Time one results: {pf_one_results}")
 
         with Profiler() as pf_multiple:
-            data = _get_job_time_series_data_from_metrics(
-                job=job,
-                metrics=metrics,
-                max_points=10_000,
+            results = _get_job_time_series_data(
+                job=job, metric=metrics, max_points=10_000
             )
         logging.info(f"Time multiple results: {pf_multiple}")
+        data = {metric: [] for metric in metrics}
+        for result in results:
+            data[result["metric"]["__name__"]].append(result)
 
         for metric in metrics:
             data_metric = data[metric]

@@ -4,7 +4,7 @@ import json
 import logging
 import os
 from datetime import datetime
-from typing import Callable, Dict, List, Sequence
+from typing import Callable, Sequence, Union
 
 import numpy as np
 import pandas
@@ -21,7 +21,7 @@ from sarc.traces import trace_decorator
 @trace_decorator()
 def get_job_time_series(
     job: SlurmJob,
-    metric: str,
+    metric: Union[str, Sequence[str]],
     min_interval: int = 30,
     max_points: int = 100,
     measure: str | None = None,
@@ -69,7 +69,7 @@ def get_job_time_series(
 @trace_decorator()
 def _get_job_time_series_data(
     job: SlurmJob,
-    metric: str,
+    metric: Union[str, Sequence[str]],
     min_interval: int = 30,
     max_points: int = 100,
     measure: str | None = None,
@@ -88,7 +88,12 @@ def _get_job_time_series_data(
         aggregation: Either "total", to aggregate over the whole range, or
             "interval", to aggregate over each interval.
     """
-
+    metrics = [metric] if isinstance(metric, str) else metric
+    if not metrics:
+        raise ValueError("No metrics given")
+    for m in metrics:
+        if m not in slurm_job_metric_names:
+            raise ValueError(f"Unknown metric name: {m}")
     if aggregation not in ("interval", "total", None):
         raise ValueError(
             f"Aggregation must be one of ['total', 'interval', None]: {aggregation}"
@@ -96,10 +101,16 @@ def _get_job_time_series_data(
 
     if job.job_state != "RUNNING" and not job.elapsed_time:
         return []
-    if metric not in slurm_job_metric_names:
-        raise ValueError(f"Unknown metric name: {metric}")
 
-    selector = f'{metric}{{slurmjobid=~"{job.job_id}"}}'
+    if len(metrics) == 1:
+        (prefix,) = metrics
+        label_exprs = []
+    else:
+        prefix = ""
+        label_exprs = [f'__name__=~"^({"|".join(metrics)})$"']
+
+    label_exprs.append(f'slurmjobid="{job.job_id}"')
+    selector = prefix + "{" + ", ".join(label_exprs) + "}"
 
     now = datetime.now(tz=UTC).astimezone(MTL)
 
@@ -149,12 +160,21 @@ def _get_job_time_series_data(
 
 def _get_job_time_series_data_cache_key(
     job: SlurmJob,
-    metric: str,
+    metric: Union[str, Sequence[str]],
     min_interval: int = 30,
     max_points: int = 100,
     measure: str | None = None,
     aggregation: str = "total",
 ):
+    metrics = [metric] if isinstance(metric, str) else sorted(metric)
+    if (
+        not metrics
+        or any(m not in slurm_job_metric_names for m in metrics)
+        or aggregation not in ("interval", "total", None)
+        or (job.job_state != "RUNNING" and not job.elapsed_time)
+    ):
+        return None
+
     if job.end_time is None:
         # If job.end_time is None, then Prometheus queries
         # are based on current time (now).
@@ -167,104 +187,12 @@ def _get_job_time_series_data_cache_key(
         f".{job.job_id}"
         f".from-{job.start_time.strftime(fmt)}"
         f".to-{job.end_time.strftime(fmt)}"
-        f".{metric}"
+        f".{'+'.join(metrics)}"
         f".min-interval-{min_interval}s"
         f".max-points-{max_points}"
         f".{f'measure-{measure}-{aggregation}' if measure and aggregation else 'no_measure'}"
         f".json"
     )
-
-
-# pylint: disable=too-many-branches
-@trace_decorator()
-def _get_job_time_series_data_from_metrics(
-    job: SlurmJob,
-    metrics: Sequence[str],
-    min_interval: int = 30,
-    max_points: int = 100,
-    measure: str | None = None,
-    aggregation: str = "total",
-) -> Dict[str, List[dict]]:
-    """Fetch job metrics for many metrics at once.
-
-    Arguments:
-        job: The job for which to fetch metrics.
-        metrics: The metrics, which must be in ``slurm_job_metric_names``.
-        min_interval: The minimal reporting interval, in seconds.
-        max_points: The maximal number of data points to return.
-        measure: The aggregation measure to use ("avg_over_time", etc.)
-            A format string can be passed, e.g. ("quantile_over_time(0.5, {})")
-            to get the median.
-        aggregation: Either "total", to aggregate over the whole range, or
-            "interval", to aggregate over each interval.
-    """
-    if not metrics:
-        raise ValueError("No metrics given")
-    for metric in metrics:
-        if metric not in slurm_job_metric_names:
-            raise ValueError(f"Unknown metric name: {metric}")
-    if aggregation not in ("interval", "total", None):
-        raise ValueError(
-            f"Aggregation must be one of ['total', 'interval', None]: {aggregation}"
-        )
-
-    metric_to_data = {metric: [] for metric in metrics}
-
-    if job.job_state != "RUNNING" and not job.elapsed_time:
-        return metric_to_data
-
-    label_exprs = [
-        f'__name__=~"^({ "|".join(metrics) })$"',
-        f'slurmjobid="{job.job_id}"',
-    ]
-    selector = "{" + ", ".join(label_exprs) + "}"
-
-    now = datetime.now(tz=UTC).astimezone(MTL)
-
-    ago = now - job.start_time
-    duration = (job.end_time or now) - job.start_time
-
-    offset = int((ago - duration).total_seconds())
-    offset_string = f" offset {offset}s" if offset > 0 else ""
-
-    duration_seconds = int(duration.total_seconds())
-
-    # Duration should not be looking in the future
-    if offset < 0:
-        duration_seconds += offset
-
-    if duration_seconds <= 0:
-        return metric_to_data
-
-    interval = int(max(duration_seconds / max_points, min_interval))
-
-    query = selector
-
-    if measure and aggregation:
-        if aggregation == "interval":
-            range_seconds = interval
-        elif aggregation == "total":
-            # NB: `offset` has already been used above to generate `offset_string`
-            # and is not used anymore later in this function. So, following line
-            # does not have any effect.
-            offset += duration_seconds
-            range_seconds = duration_seconds
-        else:
-            raise ValueError(f"Unknown aggregation: {aggregation}")
-
-        query = f"{query}[{range_seconds}s]"
-        if "(" in measure:
-            query = measure.format(f"{query} {offset_string}")
-        else:
-            query = f"{measure}({query} {offset_string})"
-        query = f"{query}[{duration_seconds}s:{range_seconds}s]"
-    else:
-        query = f"{query}[{duration_seconds}s:{interval}s] {offset_string}"
-
-    logging.info(f"prometheus query with offset: {query}")
-    for result in job.fetch_cluster_config().prometheus.custom_query(query):
-        metric_to_data[result["metric"]["__name__"]].append(result)
-    return metric_to_data
 
 
 def get_job_time_series_metric_names():
@@ -345,24 +273,23 @@ def compute_job_statistics(job: SlurmJob):
         "q05": lambda self: self.quantile(0.05),
     }
 
-    raw_metrics = _get_job_time_series_data_from_metrics(
-        job=job,
-        metrics=(
-            "slurm_job_utilization_gpu",
-            "slurm_job_fp16_gpu",
-            "slurm_job_fp32_gpu",
-            "slurm_job_fp64_gpu",
-            "slurm_job_sm_occupancy_gpu",
-            "slurm_job_utilization_gpu_memory",
-            "slurm_job_power_gpu",
-            "slurm_job_core_usage",
-            "slurm_job_memory_usage",
-        ),
-        max_points=10_000,
+    metric_names = (
+        "slurm_job_utilization_gpu",
+        "slurm_job_fp16_gpu",
+        "slurm_job_fp32_gpu",
+        "slurm_job_fp64_gpu",
+        "slurm_job_sm_occupancy_gpu",
+        "slurm_job_utilization_gpu_memory",
+        "slurm_job_power_gpu",
+        "slurm_job_core_usage",
+        "slurm_job_memory_usage",
     )
+    metric_to_data = {metric: [] for metric in metric_names}
+    for result in _get_job_time_series_data(job, metric_names, max_points=10_000):
+        metric_to_data[result["metric"]["__name__"]].append(result)
     metrics = {
         metric: MetricRangeDataFrame(results) if results else None
-        for metric, results in raw_metrics.items()
+        for metric, results in metric_to_data.items()
     }
 
     gpu_utilization = compute_job_statistics_from_dataframe(
