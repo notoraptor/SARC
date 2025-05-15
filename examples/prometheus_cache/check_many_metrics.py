@@ -28,7 +28,7 @@ class Profiler:
 @scraping_mode_required
 def main():
     logging.basicConfig(level=logging.INFO)
-    os.putenv("SARC_CACHE", "ignore")
+    os.environ["SARC_CACHE"] = "ignore"
     assert os.getenv("SARC_CACHE") == "ignore"
 
     job_identifiers = [
