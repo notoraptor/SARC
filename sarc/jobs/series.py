@@ -196,7 +196,7 @@ def _get_job_time_series_data_cache_key(
 
 def get_job_time_series_metric_names():
     """Return all the metric names that relate to slurm jobs."""
-    return list(slurm_job_metric_names.keys())
+    return slurm_job_metric_names
 
 
 @trace_decorator()
