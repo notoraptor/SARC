@@ -284,7 +284,9 @@ def compute_job_statistics(job: SlurmJob):
         "slurm_job_memory_usage",
     )
     metric_to_data = {metric: [] for metric in metric_names}
-    for result in _get_job_time_series_data(job, metric_names, max_points=10_000):
+    for result in get_job_time_series(
+        job, metric_names, max_points=10_000, dataframe=False
+    ):
         metric_to_data[result["metric"]["__name__"]].append(result)
     metrics = {
         metric: MetricRangeDataFrame(results) if results else None
