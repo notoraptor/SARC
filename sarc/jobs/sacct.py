@@ -269,32 +269,6 @@ def sacct_mongodb_import(
         f"Saving into mongodb collection '{collection.Meta.collection_name}'..."
     )
     for entry in tqdm(scraper):
-        jobs = list(
-            collection.find_by(
-                {"cluster_name": entry.cluster_name, "job_id": entry.job_id}
-            )
-        )
-        if jobs:
-            for i, job in enumerate(jobs):
-                if entry != job:
-                    kn = f"{entry.cluster_name}/{entry.job_id}"
-                    logging.warning(f"Job changed ({i + 1}/{len(jobs)}): {kn}")
-                    import difflib
-                    import pprint
-
-                    exclude = {"stored_statistics", "id"}
-                    job_str = pprint.pformat(job.dict(exclude=exclude))
-                    entry_str = pprint.pformat(entry.dict(exclude=exclude))
-
-                    diff = difflib.unified_diff(
-                        job_str.splitlines(),
-                        entry_str.splitlines(),
-                        fromfile=f"job {kn}",
-                        tofile=f"entry {kn}",
-                        lineterm="",
-                    )
-                    print("\n".join(diff))
-
         saved = False
         if not no_prometheus:
             update_allocated_gpu_type(cluster, entry)
