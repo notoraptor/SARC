@@ -29,7 +29,7 @@ class Profiler:
 def main():
     logging.basicConfig(level=logging.INFO)
     os.putenv("SARC_CACHE", "ignore")
-    assert os.getenv("SARC_CACBE") == "ignore"
+    assert os.getenv("SARC_CACHE") == "ignore"
 
     job_identifiers = [
         # ["narval", 43481649],
