@@ -1,9 +1,9 @@
 import difflib
 import json
 import logging
-import sys
+import os
 import time
-from typing import List, Tuple
+from typing import List
 
 from sarc.client.job import get_job
 from sarc.config import scraping_mode_required
@@ -28,6 +28,21 @@ class Profiler:
 @scraping_mode_required
 def main():
     logging.basicConfig(level=logging.INFO)
+    os.putenv("SARC_CACHE", "ignore")
+    assert os.getenv("SARC_CACBE") == "ignore"
+
+    job_identifiers = [
+        # ["narval", 43481649],
+        # ["narval", 43502060],
+        # ["narval", 43522972],
+        # ["narval", 43528764],
+        # ["narval", 43535251],
+        # ["narval", 43539058],
+        # ["narval", 43539060],
+        # ["narval", 43539421],
+        # ["narval", 43540479],
+        ["narval", 43541060],
+    ]
 
     metrics = (
         "slurm_job_utilization_gpu",
@@ -41,45 +56,46 @@ def main():
         "slurm_job_memory_usage",
     )
 
-    with open(sys.argv[1], encoding="utf-8") as file:
-        job_identifiers: List[Tuple[str, int]] = json.load(file)
-
     for i, (cluster_name, job_id) in enumerate(job_identifiers):
         logging.info(f"[{i + 1}/{len(job_identifiers)}] {cluster_name} {job_id}")
         job = get_job(cluster=cluster_name, job_id=job_id)
 
-        with Profiler() as pf_one_results:
-            one_results = {
+        with Profiler() as pf_many_calls:
+            ret_many_calls = {
                 metric: get_job_time_series(
                     job=job, metric=metric, max_points=10_000, dataframe=False
                 )
                 for metric in metrics
             }
-        logging.info(f"Time one results: {pf_one_results}")
+        logging.info(f"Time results with many calls: {pf_many_calls}")
 
-        with Profiler() as pf_multiple:
-            results = get_job_time_series(
+        with Profiler() as pf_one_call:
+            ret_one_call = get_job_time_series(
                 job=job, metric=metrics, max_points=10_000, dataframe=False
             )
-        logging.info(f"Time multiple results: {pf_multiple}")
+        logging.info(f"Time results with one call: {pf_one_call}")
 
         data = {metric: [] for metric in metrics}
-        for result in results:
+        for result in ret_one_call:
             data[result["metric"]["__name__"]].append(result)
 
         for metric in metrics:
-            data_metric = data[metric]
-            one_result_metric = one_results[metric]
-            if data_metric == one_result_metric:
+            series_from_many = data[metric]
+            series_from_one = ret_many_calls[metric]
+            if series_from_many == series_from_one:
                 logging.info(
-                    f"Identical: {metric}, {_nb_values(data_metric)} vs {_nb_values(one_result_metric)}"
+                    f"SAME: {metric}, "
+                    f"{_nb_values(series_from_many)} vs {_nb_values(series_from_one)}"
                 )
             else:
-                message = f"DIFF {metric} {_nb_values(data_metric)} vs {_nb_values(one_result_metric)}"
+                message = (
+                    f"DIFF: {metric}, "
+                    f"{_nb_values(series_from_many)} vs {_nb_values(series_from_one)}"
+                )
                 logging.info(message)
                 print(message)
                 print("=" * 90)
-                print(_diff(data_metric, one_result_metric))
+                print(_diff(series_from_many, series_from_one))
                 print()
 
 
@@ -88,11 +104,10 @@ def _nb_values(results: List[dict]) -> List[int]:
 
 
 def _diff(dict1, dict2) -> str:
-
     d1_str = json.dumps(dict1, indent=1, sort_keys=True)
     d2_str = json.dumps(dict2, indent=1, sort_keys=True)
 
-    diff = list(
+    return "\n".join(
         difflib.unified_diff(
             d1_str.splitlines(),
             d2_str.splitlines(),
@@ -101,8 +116,6 @@ def _diff(dict1, dict2) -> str:
             lineterm="",
         )
     )
-
-    return "\n".join(diff)
 
 
 if __name__ == "__main__":
