@@ -255,6 +255,8 @@ class CachedFunction:  # pylint: disable=too-many-instance-attributes
         self.logger.debug(f"Computing {self.name}(...) for key '{key_value}'")
         value = self.fn(*args, **kwargs)
 
+        if cache_policy is CachePolicy.check and has_cache and cached_value == value:
+            logging.info(f"cache checked: {key_value}")
         if cache_policy is CachePolicy.check and has_cache and cached_value != value:
             if self.formatter is json:
                 import difflib
