@@ -99,8 +99,9 @@ def _get_job_time_series_data_using_query_range(
         start_time = job.start_time
         step_seconds = interval
 
-    logging.warning(
-        f"prometheus query range: {query} start={start_time} end={end_time} (now? {end_time == now}) step={step_seconds}"
+    logging.info(
+        f"prometheus query range: {query} "
+        f"start={start_time} end={end_time} (now? {end_time == now}) step={step_seconds}"
     )
     return job.fetch_cluster_config().prometheus.custom_query_range(
         query=query, start_time=start_time, end_time=end_time, step=f"{step_seconds}s"

@@ -276,35 +276,36 @@ class CachedFunction:  # pylint: disable=too-many-instance-attributes
         self.logger.debug(f"Computing {self.name}(...) for key '{key_value}'")
         value = self.fn(*args, **kwargs)
 
-        if cache_policy is CachePolicy.check and has_cache and cached_value == value:
-            logging.info(f"cache checked: {key_value}")
-        if cache_policy is CachePolicy.check and has_cache and cached_value != value:
-            if self.formatter is json:
-                import difflib
-
-                d1_str = json.dumps(cached_value, indent=1, sort_keys=True)
-                d2_str = json.dumps(value, indent=1, sort_keys=True)
-
-                diff = difflib.unified_diff(
-                    d1_str.splitlines(),
-                    d2_str.splitlines(),
-                    fromfile="cached",
-                    tofile="value",
-                    lineterm="",
-                )
-                difference = "\n".join(diff)
+        if cache_policy is CachePolicy.check and has_cache:
+            if cached_value == value:
+                logging.debug(f"cache checked: {key_value}")
             else:
-                difference = (
-                    f"Cached:\n"
-                    f"{repr(cached_value)}\n\n"
-                    f"Value:\n"
-                    f"{repr(value)}\n"
+                if self.formatter is json:
+                    import difflib
+
+                    d1_str = json.dumps(cached_value, indent=1, sort_keys=True)
+                    d2_str = json.dumps(value, indent=1, sort_keys=True)
+
+                    diff = difflib.unified_diff(
+                        d1_str.splitlines(),
+                        d2_str.splitlines(),
+                        fromfile="cached",
+                        tofile="value",
+                        lineterm="",
+                    )
+                    difference = "\n".join(diff)
+                else:
+                    difference = (
+                        f"Cached:\n"
+                        f"{repr(cached_value)}\n\n"
+                        f"Value:\n"
+                        f"{repr(value)}\n"
+                    )
+                raise CacheException(
+                    f"\nCached result != live result:\n"
+                    f"Key: {key_value}\n\n"
+                    f"{difference}\n"
                 )
-            raise CacheException(
-                f"\nCached result != live result:\n"
-                f"Key: {key_value}\n\n"
-                f"{difference}\n"
-            )
 
         # Whether to save the cache
         if key_value is None:
