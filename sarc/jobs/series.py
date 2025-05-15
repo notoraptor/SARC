@@ -185,11 +185,10 @@ def _get_job_time_series_data_cache_key(
     return (
         f"{job.cluster_name}"
         f".{job.job_id}"
-        f".from-{job.start_time.strftime(fmt)}"
-        f".to-{job.end_time.strftime(fmt)}"
-        f".{'+'.join(metrics)}"
-        f".min-interval-{min_interval}s"
-        f".max-points-{max_points}"
+        f".{job.start_time.strftime(fmt)}_to_{job.end_time.strftime(fmt)}"
+        f".{'+'.join(slurm_job_metric_names[m] for m in metrics)}"
+        f".min-itv-{min_interval}s"
+        f".max-pts-{max_points}"
         f".{f'measure-{measure}-{aggregation}' if measure and aggregation else 'no_measure'}"
         f".json"
     )
@@ -197,7 +196,7 @@ def _get_job_time_series_data_cache_key(
 
 def get_job_time_series_metric_names():
     """Return all the metric names that relate to slurm jobs."""
-    return slurm_job_metric_names
+    return list(slurm_job_metric_names.keys())
 
 
 @trace_decorator()
@@ -538,33 +537,34 @@ def update_job_series_rgu(df: DataFrame):
     return df
 
 
-slurm_job_metric_names = [
-    "slurm_job_core_usage",
-    "slurm_job_core_usage_total",
-    "slurm_job_fp16_gpu",
-    "slurm_job_fp32_gpu",
-    "slurm_job_fp64_gpu",
-    "slurm_job_memory_active_file",
-    "slurm_job_memory_cache",
-    "slurm_job_memory_inactive_file",
-    "slurm_job_memory_limit",
-    "slurm_job_memory_mapped_file",
-    "slurm_job_memory_max",
-    "slurm_job_memory_rss",
-    "slurm_job_memory_rss_huge",
-    "slurm_job_memory_unevictable",
-    "slurm_job_memory_usage",
-    "slurm_job_memory_usage_gpu",
-    "slurm_job_nvlink_gpu",
-    "slurm_job_nvlink_gpu_total",
-    "slurm_job_pcie_gpu",
-    "slurm_job_pcie_gpu_total",
-    "slurm_job_power_gpu",
-    "slurm_job_process_count",
-    "slurm_job_sm_occupancy_gpu",
-    "slurm_job_states",
-    "slurm_job_tensor_gpu",
-    "slurm_job_threads_count",
-    "slurm_job_utilization_gpu",
-    "slurm_job_utilization_gpu_memory",
-]
+slurm_job_metric_names = {
+    "slurm_job_core_usage": "cu",
+    "slurm_job_core_usage_total": "cut",
+    "slurm_job_fp16_gpu": "f16g",
+    "slurm_job_fp32_gpu": "f32g",
+    "slurm_job_fp64_gpu": "f64g",
+    "slurm_job_memory_active_file": "maf",
+    "slurm_job_memory_cache": "mc",
+    "slurm_job_memory_inactive_file": "mif",
+    "slurm_job_memory_limit": "ml",
+    "slurm_job_memory_mapped_file": "mmf",
+    "slurm_job_memory_max": "mm",
+    "slurm_job_memory_rss": "mr",
+    "slurm_job_memory_rss_huge": "mrh",
+    "slurm_job_memory_unevictable": "mun",
+    "slurm_job_memory_usage": "mus",
+    "slurm_job_memory_usage_gpu": "mug",
+    "slurm_job_nvlink_gpu": "ng",
+    "slurm_job_nvlink_gpu_total": "ngt",
+    "slurm_job_pcie_gpu": "pcg",
+    "slurm_job_pcie_gpu_total": "pgt",
+    "slurm_job_power_gpu": "pwg",
+    "slurm_job_process_count": "pc",
+    "slurm_job_sm_occupancy_gpu": "sog",
+    "slurm_job_states": "s",
+    "slurm_job_tensor_gpu": "tg",
+    "slurm_job_threads_count": "tc",
+    "slurm_job_utilization_gpu": "ug",
+    "slurm_job_utilization_gpu_memory": "ugm",
+}
+assert len(set(slurm_job_metric_names.values())) == len(slurm_job_metric_names)

@@ -14,6 +14,7 @@ from sarc.config import MTL, UTC
 from sarc.jobs.series import (
     _get_job_time_series_data,
     _get_job_time_series_data_cache_key,
+    get_job_time_series_metric_names,
     slurm_job_metric_names,
 )
 from sarc.traces import trace_decorator
@@ -100,7 +101,7 @@ def _get_job_time_series_using_query_range(
 
     if job.job_state != "RUNNING" and not job.elapsed_time:
         return []
-    if metric not in slurm_job_metric_names:
+    if metric not in get_job_time_series_metric_names():
         raise ValueError(f"Unknown metric name: {metric}")
 
     selector = f'{metric}{{slurmjobid=~"{job.job_id}"}}'
