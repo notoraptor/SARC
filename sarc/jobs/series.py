@@ -54,10 +54,7 @@ def get_job_time_series(
         max_points=max_points,
         measure=measure,
         aggregation=aggregation,
-        # Use CachePolicy.check
-        # to check if cached values are
-        # identical to live results
-        cache_policy=CachePolicy.check,
+        cache_policy=None,
     )
     if dataframe:
         return MetricRangeDataFrame(results) if results else None

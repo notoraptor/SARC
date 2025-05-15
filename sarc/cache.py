@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import pickle
 import re
 from dataclasses import dataclass, field
@@ -55,6 +56,13 @@ class CachePolicy(Enum):
     ignore = "ignore"
     always = "always"
     check = "check"
+
+
+def _cache_policy_from_env() -> CachePolicy:
+    policy_name = os.getenv("SARC_CACHE", "use")
+    policy = getattr(CachePolicy, policy_name, CachePolicy.use)
+    logging.info(f"inferred cache policy: {policy}")
+    return policy
 
 
 @dataclass
@@ -214,7 +222,11 @@ class CachedFunction:  # pylint: disable=too-many-instance-attributes
         at_time=None,
         **kwargs,
     ):
-        cache_policy = CachePolicy(cache_policy)
+        cache_policy = (
+            _cache_policy_from_env()
+            if cache_policy is None
+            else CachePolicy(cache_policy)
+        )
         at_time = at_time or datetime.now()
         key_value = self.key(*args, **kwargs)
 
@@ -340,6 +352,8 @@ def with_cache(
             do not save the result to cache.
           * CachePolicy.check ("check"): Recompute the value and compare it
             to cache if available. Raise an exception if cache != value.
+          * None: if None, get cache policy from environment variable SARC_CACHE
+            (default: CachePolicy.use)
         * save_cache (default: True): Whether to cache the result on disk or not.
         * at_time (default: now): The time at which to evaluate the request.
     """
