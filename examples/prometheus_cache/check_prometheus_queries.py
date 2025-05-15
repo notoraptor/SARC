@@ -4,7 +4,7 @@ import sys
 from typing import List, Tuple
 from unittest import mock
 
-from series_with_query_range import new_get_job_time_series
+from new_series_with_query_range import new_get_job_time_series
 
 from sarc.client.job import SlurmJob, get_job
 from sarc.config import scraping_mode_required

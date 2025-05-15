@@ -4,7 +4,7 @@ import sys
 import time
 from typing import List, Tuple
 
-from series_with_query_range import PromCache
+from new_series_with_query_range import PromCache
 
 from sarc.client.job import get_job
 from sarc.config import scraping_mode_required
