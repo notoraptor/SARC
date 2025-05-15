@@ -28,6 +28,8 @@ class Profiler:
 
 @scraping_mode_required
 def main():
+    logging.basicConfig(level=logging.INFO)
+
     metrics = (
         "slurm_job_utilization_gpu",
         "slurm_job_fp16_gpu",
@@ -39,8 +41,6 @@ def main():
         "slurm_job_core_usage",
         "slurm_job_memory_usage",
     )
-
-    logging.basicConfig(level=logging.INFO)
 
     with open(sys.argv[1], encoding="utf-8") as file:
         job_identifiers: List[Tuple[str, int]] = json.load(file)
@@ -63,6 +63,7 @@ def main():
                 job=job, metric=metrics, max_points=10_000, dataframe=False
             )
         logging.info(f"Time multiple results: {pf_multiple}")
+
         data = {metric: [] for metric in metrics}
         for result in results:
             data[result["metric"]["__name__"]].append(result)
