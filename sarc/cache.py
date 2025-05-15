@@ -5,6 +5,7 @@ import logging
 import os
 import pickle
 import re
+from contextvars import ContextVar
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from enum import Enum
@@ -58,10 +59,18 @@ class CachePolicy(Enum):
     check = "check"
 
 
+cache_policy_var = ContextVar("cache_policy_var", default=None)
+
+
 def _cache_policy_from_env() -> CachePolicy:
+    if (current := cache_policy_var.get()) is not None:
+        return current
+
     policy_name = os.getenv("SARC_CACHE", "use")
     policy = getattr(CachePolicy, policy_name, CachePolicy.use)
     logging.info(f"inferred cache policy: {policy}")
+
+    cache_policy_var.set(policy)
     return policy
 
 
