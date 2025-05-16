@@ -32,7 +32,7 @@ def get_job_time_series(
 
     Arguments:
         job: The job for which to fetch metrics.
-        metric: The metric, which must be in ``slurm_job_metric_names``.
+        metric: The metric or list of metrics, which must be in ``slurm_job_metric_names``.
         min_interval: The minimal reporting interval, in seconds.
         max_points: The maximal number of data points to return.
         measure: The aggregation measure to use ("avg_over_time", etc.)
@@ -54,6 +54,9 @@ def get_job_time_series(
         max_points=max_points,
         measure=measure,
         aggregation=aggregation,
+        # cache_policy is None,
+        # so that it can be set
+        # with env var SARC_CACHE
         cache_policy=None,
     )
     if dataframe:
@@ -76,7 +79,7 @@ def _get_job_time_series_data(
 
     Arguments:
         job: The job for which to fetch metrics.
-        metric: The metric, which must be in ``slurm_job_metric_names``.
+        metric: The metric or list of metrics, which must be in ``slurm_job_metric_names``.
         min_interval: The minimal reporting interval, in seconds.
         max_points: The maximal number of data points to return.
         measure: The aggregation measure to use ("avg_over_time", etc.)
@@ -134,10 +137,6 @@ def _get_job_time_series_data(
         if aggregation == "interval":
             range_seconds = interval
         elif aggregation == "total":
-            # NB: `offset` has already been used above to generate `offset_string`
-            # and is not used anymore later in this function. So, following line
-            # does not have any effect.
-            offset += duration_seconds
             range_seconds = duration_seconds
         else:
             raise ValueError(f"Unknown aggregation: {aggregation}")
@@ -170,6 +169,8 @@ def _get_job_time_series_data_cache_key(
         or aggregation not in ("interval", "total", None)
         or (job.job_state != "RUNNING" and not job.elapsed_time)
     ):
+        # We don't cache for exception cases or special cases
+        # from _get_job_time_series_data()
         return None
 
     if job.end_time is None:
@@ -183,6 +184,8 @@ def _get_job_time_series_data_cache_key(
         f"{job.cluster_name}"
         f".{job.job_id}"
         f".{job.start_time.strftime(fmt)}_to_{job.end_time.strftime(fmt)}"
+        # To reduce key size, we use short metric names
+        # from dictionary `slurm_job_metric_names`
         f".{'+'.join(slurm_job_metric_names[m] for m in metrics)}"
         f".min-itv-{min_interval}s"
         f".max-pts-{max_points}"
@@ -269,6 +272,8 @@ def compute_job_statistics(job: SlurmJob):
         "q05": lambda self: self.quantile(0.05),
     }
 
+    # We will get all required job time series
+    # with just 1 call to get_job_time_series()
     metric_names = (
         "slurm_job_utilization_gpu",
         "slurm_job_fp16_gpu",
@@ -285,10 +290,13 @@ def compute_job_statistics(job: SlurmJob):
         job, metric_names, max_points=10_000, dataframe=False
     ):
         metric_to_data[result["metric"]["__name__"]].append(result)
+    # Then we convert series to data frames for each metric
     metrics = {
         metric: MetricRangeDataFrame(results) if results else None
         for metric, results in metric_to_data.items()
     }
+    # Now we can use data frames to compute statistics for each metric,
+    # by directly using compute_job_statistics_from_dataframe().
 
     gpu_utilization = compute_job_statistics_from_dataframe(
         metrics["slurm_job_utilization_gpu"],
@@ -536,6 +544,11 @@ def update_job_series_rgu(df: DataFrame):
     return df
 
 
+# Dictionary of slurm metric names:
+# We both list allowed metric names as key,
+# and we map each metric to a short name,
+# intended to be used to generate short cache key
+# for get_job_time_series().
 slurm_job_metric_names = {
     "slurm_job_core_usage": "cu",
     "slurm_job_core_usage_total": "cut",
@@ -566,4 +579,5 @@ slurm_job_metric_names = {
     "slurm_job_utilization_gpu": "ug",
     "slurm_job_utilization_gpu_memory": "ugm",
 }
+# We check that short names are unique and cover all metrics.
 assert len(set(slurm_job_metric_names.values())) == len(slurm_job_metric_names)

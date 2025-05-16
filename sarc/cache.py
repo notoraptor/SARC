@@ -56,13 +56,17 @@ class CachePolicy(Enum):
     refresh = False
     ignore = "ignore"
     always = "always"
+    # Cache policy to check live data aginast cached values
     check = "check"
 
 
+# Context var to store cache policy got from env var SARC_CACHE
 cache_policy_var = ContextVar("cache_policy_var", default=None)
 
 
 def _cache_policy_from_env() -> CachePolicy:
+    """Infer cache policy from env var SARC_CACHE"""
+
     if (current := cache_policy_var.get()) is not None:
         return current
 
@@ -231,6 +235,9 @@ class CachedFunction:  # pylint: disable=too-many-instance-attributes
         at_time=None,
         **kwargs,
     ):
+        # If cache_policy is None,
+        # we infer if from environment variable
+        # SARC_CACHE.
         cache_policy = (
             _cache_policy_from_env()
             if cache_policy is None
@@ -278,22 +285,25 @@ class CachedFunction:  # pylint: disable=too-many-instance-attributes
 
         if cache_policy is CachePolicy.check and has_cache:
             if cached_value == value:
-                logging.debug(f"cache checked: {key_value}")
+                logging.info(f"cache checked: {key_value}")
             else:
+                # Live result != cached result. Raise an exception.
+                # Try to pretty print diff if we have JSON data.
                 if self.formatter is json:
                     import difflib
 
                     d1_str = json.dumps(cached_value, indent=1, sort_keys=True)
                     d2_str = json.dumps(value, indent=1, sort_keys=True)
 
-                    diff = difflib.unified_diff(
-                        d1_str.splitlines(),
-                        d2_str.splitlines(),
-                        fromfile="cached",
-                        tofile="value",
-                        lineterm="",
+                    difference = "\n".join(
+                        difflib.unified_diff(
+                            d1_str.splitlines(),
+                            d2_str.splitlines(),
+                            fromfile="cached",
+                            tofile="value",
+                            lineterm="",
+                        )
                     )
-                    difference = "\n".join(diff)
                 else:
                     difference = (
                         f"Cached:\n"
@@ -362,7 +372,7 @@ def with_cache(
             do not save the result to cache.
           * CachePolicy.check ("check"): Recompute the value and compare it
             to cache if available. Raise an exception if cache != value.
-          * None: if None, get cache policy from environment variable SARC_CACHE
+          * None: Get cache policy from environment variable SARC_CACHE
             (default: CachePolicy.use)
         * save_cache (default: True): Whether to cache the result on disk or not.
         * at_time (default: now): The time at which to evaluate the request.

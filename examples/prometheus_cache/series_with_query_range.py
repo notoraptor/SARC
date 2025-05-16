@@ -1,3 +1,5 @@
+"""Implementation of get_job_time_series() using Prometheus query range."""
+
 from __future__ import annotations
 
 import logging
@@ -20,12 +22,11 @@ def _get_job_time_series_data_using_query_range(
     measure: str | None = None,
     aggregation: str = "total",
 ):
-    """Fetch job metrics.
+    """Fetch job metrics using Prometheus query range.
 
     Arguments:
-        cluster: The cluster on which to fetch metrics.
         job: The job for which to fetch metrics.
-        metric: The metric, which must be in ``slurm_job_metric_names``.
+        metric: The metric or list of metrics, which must be in ``slurm_job_metric_names``.
         min_interval: The minimal reporting interval, in seconds.
         max_points: The maximal number of data points to return.
         measure: The aggregation measure to use ("avg_over_time", etc.)
@@ -76,6 +77,9 @@ def _get_job_time_series_data_using_query_range(
     interval = int(max(duration_seconds / max_points, min_interval))
 
     if measure and aggregation:
+        # NB: With current usage of get_job_time_series(),
+        # this if-block is never tested.
+
         if aggregation == "interval":
             range_seconds = interval
         elif aggregation == "total":
