@@ -183,7 +183,7 @@ def _get_job_time_series_data_cache_key(
     return (
         f"{job.cluster_name}"
         f".{job.job_id}"
-        f".{job.job_state}"
+        f".{job.job_state.name}"
         f".{job.start_time.strftime(fmt)}_to_{job.end_time.strftime(fmt)}"
         # To reduce key size, we use short metric names
         # from dictionary `slurm_job_metric_names`
