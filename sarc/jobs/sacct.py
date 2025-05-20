@@ -275,17 +275,16 @@ def sacct_mongodb_import(
             )
         )
         if jobs:
+            import difflib
+            import pprint
+
             for i, job in enumerate(jobs):
-                if entry != job:
+                exclude = {"stored_statistics", "id"}
+                job_str = pprint.pformat(job.dict(exclude=exclude))
+                entry_str = pprint.pformat(entry.dict(exclude=exclude))
+                if job_str != entry_str:
                     kn = f"{entry.cluster_name}/{entry.job_id}"
                     logging.warning(f"Job changed ({i + 1}/{len(jobs)}): {kn}")
-                    import difflib
-                    import pprint
-
-                    exclude = {"stored_statistics", "id"}
-                    job_str = pprint.pformat(job.dict(exclude=exclude))
-                    entry_str = pprint.pformat(entry.dict(exclude=exclude))
-
                     diff = difflib.unified_diff(
                         job_str.splitlines(),
                         entry_str.splitlines(),
