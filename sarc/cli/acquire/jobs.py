@@ -114,7 +114,7 @@ class AcquireJobs:
                         # pylint: disable=broad-exception-caught
                         except Exception as e:
                             logging.error(
-                                f"Failed to acquire data for {cluster_name} on {date}: {e}"
+                                f"Failed to acquire data for {cluster_name} on {date}: {type(e)}: {e}"
                             )
                             raise e
             # pylint: disable=broad-exception-caught
