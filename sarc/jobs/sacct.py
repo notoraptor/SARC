@@ -313,6 +313,7 @@ def update_allocated_gpu_type(cluster: ClusterConfig, entry: SlurmJob) -> Option
         if output:
             gpu_type = output[0]["metric"]["gpu_type"]
         else:
+            print("JOB ID", entry.job_id)
             print("Default gpu type", entry.allocated.gpu_type)
             print("Nodes", entry.nodes)
     else:
