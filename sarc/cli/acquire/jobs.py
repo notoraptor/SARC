@@ -113,7 +113,7 @@ class AcquireJobs:
                                 _dates_set_last_date(cluster_name, date)
                         # pylint: disable=broad-exception-caught
                         except Exception as e:
-                            logging.exception(
+                            logging.error(
                                 f"Failed to acquire data for {cluster_name} on {date}: {e}"
                             )
                             raise e

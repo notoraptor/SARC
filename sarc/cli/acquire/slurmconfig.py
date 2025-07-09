@@ -76,7 +76,10 @@ class FileContent(FormatterProto[str]):
 
 class SlurmConfigParser:
     def __init__(
-        self, cluster: ClusterConfig, day: str | None = None, parse_gpu_billing=True
+        self,
+        cluster: ClusterConfig,
+        day: str | None = None,
+        parse_gpu_billing: bool = True,
     ):
         if day is None:
             # No day given, get current day
