@@ -163,9 +163,9 @@ class CachedFunction[**P, R]:  # pylint: disable=too-many-instance-attributes
                     string=candidate.name,
                     pattern=key_value.format(time=f"({_time_regexp})"),
                 )
-                if m is None:
+                if m is None and valid is not True:
                     raise CacheException(
-                        f"Could not parse cache file name '{candidate}'"
+                        f"Could not parse time from cache file name '{candidate}'"
                     )
                 candidate_time = (
                     datetime.now()
