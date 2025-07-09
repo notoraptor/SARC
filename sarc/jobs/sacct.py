@@ -302,8 +302,7 @@ def update_allocated_gpu_type(cluster: ClusterConfig, entry: SlurmJob) -> Option
     None
         Unable to infer gpu type.
     """
-    if entry.job_id == 55360222:
-        print("here!!!!!")
+    print(repr(entry.job_id))
 
     gpu_type = None
 
