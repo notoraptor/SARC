@@ -313,9 +313,16 @@ def update_allocated_gpu_type(cluster: ClusterConfig, entry: SlurmJob) -> Option
         if output:
             gpu_type = output[0]["metric"]["gpu_type"]
         else:
-            print("JOB ID", entry.job_id)
+            print("[JOB_ID]", entry.job_id)
             print("Default gpu type", entry.allocated.gpu_type)
             print("Nodes", entry.nodes)
+            node_gpu_mapping = get_node_to_gpu(cluster.name, entry.start_time)
+            if node_gpu_mapping:
+                node_to_gpu = node_gpu_mapping.node_to_gpu
+                gpu_types = {
+                    gpu for nodename in entry.nodes for gpu in node_to_gpu.get(nodename, ())
+                }
+                print("Inferred gpu_type from nodes:", gpu_types)
     else:
         # No prometheus config. Try to get GPU type from entry nodes.
         assert cluster.name is not None
