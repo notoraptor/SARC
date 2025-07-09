@@ -302,8 +302,6 @@ def update_allocated_gpu_type(cluster: ClusterConfig, entry: SlurmJob) -> Option
     None
         Unable to infer gpu type.
     """
-    print(repr(entry.job_id))
-
     gpu_type = None
 
     if cluster.prometheus_url:
