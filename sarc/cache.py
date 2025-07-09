@@ -273,9 +273,7 @@ class CachedFunction[**P, R]:  # pylint: disable=too-many-instance-attributes
                 has_cache = True
                 if cache_policy is not CachePolicy.check:
                     return cached_value
-            except CacheException as exc:
-                if self.subdirectory == "prometheus":
-                    print("Cannot read cache for:", key_value, exc)
+            except CacheException:
                 pass
 
         if require_cache:

@@ -86,7 +86,7 @@ class SAcctScraper:
             or self.get_raw().get("meta", {}).get("slurm", {})
         ).get("version", None)
         for entry in self.get_raw()["jobs"]:
-            with using_trace("sarc.jobs.sacct", "SAcctScraper.__iter__") as span:
+            with using_trace("sarc.jobs.sacct", "SAcctScraper.__iter__", exception_types=()) as span:
                 span.set_attribute("entry", json.dumps(entry))
                 converted = self.convert(entry, version)
                 if converted is not None:
