@@ -395,9 +395,12 @@ def compute_job_statistics(job: SlurmJob) -> JobStatistics:
     )
     job_mem = job.allocated.mem
     if job_mem is None:
-        print("job_mem is None", job.job_id)
-        if metrics["slurm_job_memory_usage"] is None:
-            print("and metric slurm_job_memory_usage is None, too")
+        print(
+            "job_mem is None",
+            job.job_id,
+            "metric slurm_job_memory_usage is None?",
+            metrics["slurm_job_memory_usage"] is None,
+        )
     try:
         system_memory = compute_job_statistics_from_dataframe(
             metrics["slurm_job_memory_usage"],
