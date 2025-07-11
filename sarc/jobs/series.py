@@ -394,6 +394,8 @@ def compute_job_statistics(job: SlurmJob) -> JobStatistics:
         is_time_counter=True,
     )
     job_mem = job.allocated.mem
+    if job_mem is None:
+        print("what")
     system_memory = (
         compute_job_statistics_from_dataframe(
             metrics["slurm_job_memory_usage"],
