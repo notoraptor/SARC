@@ -91,8 +91,7 @@ class SAcctScraper:
             ) as span:
                 span.set_attribute("entry", json.dumps(entry))
                 converted = self.convert(entry, version)
-                if converted is not None:
-                    yield converted
+                yield converted
 
     def convert(self, entry: dict, version: dict | None = None) -> SlurmJob | None:
         """Convert a single job entry from sacct to a SlurmJob."""
@@ -274,20 +273,14 @@ def sacct_mongodb_import(
         f"Saving into mongodb collection '{collection.Meta.collection_name}'..."
     )
     for entry in tqdm(scraper):
-        print(1)
-        saved = False
-        print(2)
-        if not no_prometheus:
-            print(3)
-            update_allocated_gpu_type(cluster, entry)
-            print(4)
-            saved = entry.statistics(recompute=True, save=True) is not None
-            print(5)
+        if entry is not None:
+            saved = False
+            if not no_prometheus:
+                update_allocated_gpu_type(cluster, entry)
+                saved = entry.statistics(recompute=True, save=True) is not None
 
-        if not saved:
-            print(6)
-            collection.save_job(entry)
-            print(7)
+            if not saved:
+                collection.save_job(entry)
     logger.info(f"Saved {len(scraper)} entries.")
 
 
