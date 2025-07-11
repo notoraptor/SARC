@@ -395,12 +395,18 @@ def compute_job_statistics(job: SlurmJob) -> JobStatistics:
     )
     job_mem = job.allocated.mem
     assert job_mem is not None
-    system_memory = compute_job_statistics_from_dataframe(
-        metrics["slurm_job_memory_usage"],
-        statistics=statistics_dict,
-        normalization=lambda x: float(x / 1e6 / job_mem),
-        unused_threshold=False,
-    )
+    if job_mem is None:
+        print("job_mem is None", job.job_id)
+    try:
+        system_memory = compute_job_statistics_from_dataframe(
+            metrics["slurm_job_memory_usage"],
+            statistics=statistics_dict,
+            normalization=lambda x: float(x / 1e6 / job_mem),
+            unused_threshold=False,
+        )
+    except Exception as e:
+        print("Gog exception here", type(e), e)
+        raise e
 
     return JobStatistics(
         gpu_utilization=Statistics(**gpu_utilization) if gpu_utilization else None,
