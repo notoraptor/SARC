@@ -118,8 +118,9 @@ class AcquireJobs:
                             )
                             raise e
             # pylint: disable=broad-exception-caught
-            except Exception:
+            except Exception as exc:
                 # Error while acquiring data on a cluster from given dates.
                 # Continue to next cluster.
+                print("error", type(exc), exc)
                 continue
         return 0
