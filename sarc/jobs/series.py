@@ -394,7 +394,6 @@ def compute_job_statistics(job: SlurmJob) -> JobStatistics:
         is_time_counter=True,
     )
     job_mem = job.allocated.mem
-    assert job_mem is not None
     if job_mem is None:
         print("job_mem is None", job.job_id)
     try:
