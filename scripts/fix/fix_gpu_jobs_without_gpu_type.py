@@ -34,6 +34,7 @@ def main():
         "allocated.gres_gpu": {"$gt": 0},
         "allocated.gpu_type": None,
     }
+    print("Counting GPU jobs w/o GPU type ...")
     expected = config().mongo.database_instance.jobs.count_documents(base_query)
     print("GPU jobs w/o GPU type:", expected)
 
