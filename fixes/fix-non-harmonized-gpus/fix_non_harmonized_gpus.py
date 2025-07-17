@@ -66,8 +66,8 @@ def main():
             f"WARNING: Expected {expected} jobs, actually processed {count} jobs",
             file=sys.stderr,
         )
-        exit(-1)
-    exit(0)
+        sys.exit(-1)
+    sys.exit(0)
 
 
 def get_harmonized_gpu_type(job: SlurmJob) -> str | None:
