@@ -1,0 +1,13 @@
+SARC_MODE=scraping SARC_CONFIG=config/sarc-dev.yaml uv run sarc -v acquire slurmconfig -c beluga -d 2024-04-03
+SARC_MODE=scraping SARC_CONFIG=config/sarc-dev.yaml uv run sarc -v acquire slurmconfig -c cedar -d 2024-04-03
+SARC_MODE=scraping SARC_CONFIG=config/sarc-dev.yaml uv run sarc -v acquire slurmconfig -c cedar -d 2025-02-26
+SARC_MODE=scraping SARC_CONFIG=config/sarc-dev.yaml uv run sarc -v acquire slurmconfig -c cedar -d 2025-07-03
+SARC_MODE=scraping SARC_CONFIG=config/sarc-dev.yaml uv run sarc -v acquire slurmconfig -c graham -d 2024-04-03
+SARC_MODE=scraping SARC_CONFIG=config/sarc-dev.yaml uv run sarc -v acquire slurmconfig -c graham -d 2025-03-02
+SARC_MODE=scraping SARC_CONFIG=config/sarc-dev.yaml uv run sarc -v acquire slurmconfig -c graham -d 2025-03-20
+SARC_MODE=scraping SARC_CONFIG=config/sarc-dev.yaml uv run sarc -v acquire slurmconfig -c graham -d 2025-07-03
+SARC_MODE=scraping SARC_CONFIG=config/sarc-dev.yaml uv run sarc -v acquire slurmconfig -c mila -d 2024-10-01
+SARC_MODE=scraping SARC_CONFIG=config/sarc-dev.yaml uv run sarc -v acquire slurmconfig -c mila -d 2025-07-01
+SARC_MODE=scraping SARC_CONFIG=config/sarc-dev.yaml uv run sarc -v acquire slurmconfig -c narval -d 2023-11-28
+SARC_MODE=scraping SARC_CONFIG=config/sarc-dev.yaml uv run sarc -v acquire slurmconfig -c narval -d 2025-02-26
+SARC_MODE=scraping SARC_CONFIG=config/sarc-dev.yaml uv run sarc -v acquire slurmconfig -c narval -d 2025-03-20
