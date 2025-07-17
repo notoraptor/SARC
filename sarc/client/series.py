@@ -145,7 +145,7 @@ def load_job_series(
         # Additional computations for job.allocated flattened fields.
         # TODO: Why is it possible to have billing smaller than gres_gpu???
         billing = job.allocated.billing or 0
-        gres_gpu = job.allocated.gres_gpu or 0
+        gres_gpu = job.requested.gres_gpu or 0
         if gres_gpu:
             job_series["allocated.gres_gpu"] = max(billing, gres_gpu)
             job_series["allocated.cpu"] = job.allocated.cpu
