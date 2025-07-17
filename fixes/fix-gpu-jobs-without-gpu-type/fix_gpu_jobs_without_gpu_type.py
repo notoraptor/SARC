@@ -39,7 +39,7 @@ def main():
 
     # Count GPU jobs without GPU type.
     base_query = {
-        "requested.gres_gpu": {"$gt": 0},
+        # "requested.gres_gpu": {"$gt": 0},
         "allocated.gres_gpu": {"$gt": 0},
         "allocated.gpu_type": None,
     }
