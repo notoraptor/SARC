@@ -2,7 +2,6 @@ import sys
 from sarc.config import config, scraping_mode_required, MTL
 from datetime import datetime, timedelta
 from sarc.client.job import SlurmJob, _jobs_collection
-from sarc.jobs.node_gpu_mapping import get_node_to_gpu
 from tqdm import tqdm
 from sarc.client import get_rgus
 
@@ -27,7 +26,7 @@ def main():
     assert oldest_time < newest_time
     print(f"Oldest time: {oldest_time} (since {newest_time - oldest_time})")
 
-    # Count GPU jobs without GPU type.
+    # Count GPU jobs with non-harmonized GPUs.
     base_query = {
         "allocated.gpu_type": {"$ne": None, "$nin": harmonized_names},
     }
@@ -72,7 +71,7 @@ def main():
 
 
 def get_harmonized_gpu_type(job: SlurmJob) -> str | None:
-    """Find GPU type and return harmonized GPU name if possible."""
+    """Harmonize GPU name if possible."""
     gpu_type = job.allocated.gpu_type
     cluster = job.fetch_cluster_config()
     harmonized_gpu_names = {

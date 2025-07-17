@@ -73,7 +73,10 @@ def main():
 
     print(f"Updated {updated}/{expected} jobs", "" if save else "(not saved)")
     if count != expected:
-        print(f"WARNING: Expected {expected} jobs, actually processed {count} jobs", file=sys.stderr)
+        print(
+            f"WARNING: Expected {expected} jobs, actually processed {count} jobs",
+            file=sys.stderr,
+        )
         exit(-1)
     exit(0)
 
