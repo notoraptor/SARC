@@ -37,7 +37,7 @@ def main():
 
     interval = timedelta(days=7)
     count = 0
-    updated = 0
+    nb_updated = 0
     current_time = oldest_time
     updates = {}
     with tqdm(total=expected, desc="Non-harmonized GPUs") as pbar:
@@ -60,18 +60,19 @@ def main():
                     if save:
                         job.allocated.gpu_type = gpu_type
                         job.save()
-                    updated += 1
+                    nb_updated += 1
                 pbar.update(1)
                 count += 1
             current_time = next_time
 
+    print()
+
     if updates:
-        print()
         print("Updates found (cluster => GPU => {harmonized names}):")
         pprint.pprint(updates)
         print()
 
-    print(f"Updated {updated}/{expected} jobs", "" if save else "(not saved)")
+    print(f"Updated {nb_updated}/{expected} jobs", "" if save else "(not saved)")
     if count != expected:
         print(
             f"WARNING: Expected {expected} jobs, actually processed {count} jobs",
