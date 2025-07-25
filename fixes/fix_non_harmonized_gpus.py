@@ -65,8 +65,12 @@ def main():
                 count += 1
             current_time = next_time
 
-    print("Updates found (cluster => GPU => {harmonized names}):")
-    pprint.pprint(updates)
+    if updates:
+        print()
+        print("Updates found (cluster => GPU => {harmonized names}):")
+        pprint.pprint(updates)
+        print()
+
     print(f"Updated {updated}/{expected} jobs", "" if save else "(not saved)")
     if count != expected:
         print(
