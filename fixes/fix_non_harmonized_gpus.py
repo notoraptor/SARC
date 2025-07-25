@@ -54,7 +54,9 @@ def main():
                 assert job.allocated.gpu_type not in harmonized_set
                 gpu_type = get_harmonized_gpu_type(job)
                 if gpu_type is not None and gpu_type != job.allocated.gpu_type:
-                    updates.setdefault(job.allocated.gpu_type, set()).add(gpu_type)
+                    updates.setdefault(job.cluster_name, {}).setdefault(
+                        job.allocated.gpu_type, set()
+                    ).add(gpu_type)
                     if save:
                         job.allocated.gpu_type = gpu_type
                         job.save()
@@ -63,7 +65,7 @@ def main():
                 count += 1
             current_time = next_time
 
-    print("Updates (GPU => {harmonized names}):")
+    print("Updates found (cluster => GPU => {harmonized names}):")
     pprint.pprint(updates)
     print(f"Updated {updated}/{expected} jobs", "" if save else "(not saved)")
     if count != expected:
