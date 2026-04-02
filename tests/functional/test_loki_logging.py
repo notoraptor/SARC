@@ -3,46 +3,44 @@
 import logging
 
 import pytest
+from opentelemetry._logs import set_logger_provider
+from opentelemetry.exporter.otlp.proto.http._log_exporter import OTLPLogExporter
+from opentelemetry.sdk._logs import LoggerProvider, LoggingHandler
+from opentelemetry.sdk._logs.export import SimpleLogRecordProcessor
+from opentelemetry.sdk.resources import Resource
 from pytest_httpserver import HTTPServer
-
-from sarc.config import config
-from sarc.logging import getOpenTelemetryLoggingHandler
 
 
 @pytest.fixture
 def httpserver(httpserver: HTTPServer):
-    # Configurer le mock pour l'endpoint Loki
     httpserver.expect_request("/otlp/v1/logs", method="POST").respond_with_json(
         {"status": "success", "data": {"result": []}}
     )
     return httpserver
 
 
-# I gave up on testing the whole chain (sending a logger message all the way to loki),
-# because pytest intercepts logging, and I tried everything to disable that without success.
-# Instead, a more restricted test of the opentelemetry logging handler
-# to loki is set up, with an httpserver to mock the endpoint.
-# The only thing that is not tested in the message pipeline is the logging library itself,
-# which can be considered reliable ?
-@pytest.mark.skip(
-    reason="Broken because opentelemetry switched to doing the flush in a thread in the background"
-)
-@pytest.mark.usefixtures("base_config_with_logging")
-def test_loki_logging_handler(httpserver):
-    # Configurer l'URL de l'endpoint Loki
-    # print(f"http://{httpserver.host}:{httpserver.port}/otlp/v1/logs")
+@pytest.fixture
+def ot_handler(httpserver):
+    """Build an OpenTelemetry logging handler with synchronous export."""
     loki_url = httpserver.url_for("/otlp/v1/logs")
-    log_conf = config().logging
-    log_conf.OTLP_endpoint = loki_url
+    logger_provider = LoggerProvider(
+        resource=Resource.create({"service.name": "sarc-test"})
+    )
+    set_logger_provider(logger_provider)
+    otlp_exporter = OTLPLogExporter(loki_url)
+    logger_provider.add_log_record_processor(SimpleLogRecordProcessor(otlp_exporter))
+    handler = LoggingHandler(level=logging.NOTSET, logger_provider=logger_provider)
+    yield handler
+    logger_provider.shutdown()
 
-    ot_handler = getOpenTelemetryLoggingHandler(log_conf)
 
+def test_loki_logging_handler(httpserver, ot_handler):
     ot_handler.flush()
     assert len(httpserver.log) == 0
 
     ot_handler.emit(
         logging.LogRecord(
-            "test_ERROR", logging.ERROR, "test_ERROR", 0, "test ERROR log", [], None
+            "test_ERROR", logging.ERROR, "test_ERROR", 0, "test ERROR log", (), None
         )
     )
     ot_handler.flush()
@@ -55,7 +53,7 @@ def test_loki_logging_handler(httpserver):
             "test_WARNING",
             0,
             "test WARNING log",
-            [],
+            (),
             None,
         )
     )

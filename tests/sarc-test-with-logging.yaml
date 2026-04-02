@@ -43,6 +43,7 @@ sarc:
     local:
       accounts: null
       host: localhost
+      private_key: test_key.yaml
       prometheus_url: null
       sacct_bin: /opt/slurm/bin/sacct
       timezone: America/Montreal
