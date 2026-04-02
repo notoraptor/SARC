@@ -3,12 +3,12 @@
 import logging
 import time
 
+import gifnoc
 import pytest
 from opentelemetry._logs import get_logger_provider
 from opentelemetry.sdk._logs import LoggingHandler
 from pytest_httpserver import HTTPServer
 
-from sarc.config import config
 from sarc.logging import setupLogging
 
 
@@ -30,11 +30,23 @@ def httpserver(httpserver: HTTPServer):
     return httpserver
 
 
-@pytest.mark.usefixtures("base_config_with_logging")
-def test_setup_logging_configures_opentelemetry(httpserver):
-    loki_url = httpserver.url_for("/otlp/v1/logs")
-    config().logging.OTLP_endpoint = loki_url
+@pytest.fixture
+def config_with_logging(httpserver):
+    with gifnoc.overlay(
+        {
+            "sarc": {
+                "logging": {
+                    "OTLP_endpoint": httpserver.url_for("/otlp/v1/logs"),
+                    "service_name": "sarc-test",
+                    "log_level": "WARNING",
+                }
+            }
+        }
+    ):
+        yield
 
+
+def test_setup_logging_configures_opentelemetry(httpserver, config_with_logging):
     root_logger = logging.getLogger()
     original_handlers = root_logger.handlers[:]
     original_level = root_logger.level
@@ -43,9 +55,7 @@ def test_setup_logging_configures_opentelemetry(httpserver):
         setupLogging()
 
         # Verify setupLogging installed an OpenTelemetry handler on root logger
-        ot_handlers = [
-            h for h in root_logger.handlers if isinstance(h, LoggingHandler)
-        ]
+        ot_handlers = [h for h in root_logger.handlers if isinstance(h, LoggingHandler)]
         assert len(ot_handlers) == 1
 
         assert len(httpserver.log) == 0
