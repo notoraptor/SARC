@@ -4,6 +4,7 @@ import logging
 import time
 
 import pytest
+from opentelemetry._logs import get_logger_provider
 from opentelemetry.sdk._logs import LoggingHandler
 from pytest_httpserver import HTTPServer
 
@@ -56,8 +57,6 @@ def test_setup_logging_configures_opentelemetry(httpserver):
         logger.warning("test WARNING log")
         wait_for_logs(httpserver, 2)
     finally:
-        for h in root_logger.handlers:
-            if isinstance(h, LoggingHandler):
-                h._logger_provider.shutdown()
+        get_logger_provider().shutdown()
         root_logger.handlers = original_handlers
         root_logger.setLevel(original_level)
