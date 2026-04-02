@@ -1,14 +1,23 @@
 # test logging to loki service
 
 import logging
+import time
 
 import pytest
-from opentelemetry._logs import set_logger_provider
-from opentelemetry.exporter.otlp.proto.http._log_exporter import OTLPLogExporter
-from opentelemetry.sdk._logs import LoggerProvider, LoggingHandler
-from opentelemetry.sdk._logs.export import SimpleLogRecordProcessor
-from opentelemetry.sdk.resources import Resource
 from pytest_httpserver import HTTPServer
+
+from sarc.config import config
+from sarc.logging import getOpenTelemetryLoggingHandler
+
+
+def wait_for_logs(httpserver, expected, timeout=5):
+    deadline = time.time() + timeout
+    while len(httpserver.log) < expected:
+        if time.time() > deadline:
+            raise AssertionError(
+                f"Expected {expected} log requests, got {len(httpserver.log)}"
+            )
+        time.sleep(0.05)
 
 
 @pytest.fixture
@@ -19,23 +28,14 @@ def httpserver(httpserver: HTTPServer):
     return httpserver
 
 
-@pytest.fixture
-def ot_handler(httpserver):
-    """Build an OpenTelemetry logging handler with synchronous export."""
+@pytest.mark.usefixtures("base_config_with_logging")
+def test_loki_logging_handler(httpserver):
     loki_url = httpserver.url_for("/otlp/v1/logs")
-    logger_provider = LoggerProvider(
-        resource=Resource.create({"service.name": "sarc-test"})
-    )
-    set_logger_provider(logger_provider)
-    otlp_exporter = OTLPLogExporter(loki_url)
-    logger_provider.add_log_record_processor(SimpleLogRecordProcessor(otlp_exporter))
-    handler = LoggingHandler(level=logging.NOTSET, logger_provider=logger_provider)
-    yield handler
-    logger_provider.shutdown()
+    log_conf = config().logging
+    log_conf.OTLP_endpoint = loki_url
 
+    ot_handler = getOpenTelemetryLoggingHandler(log_conf)
 
-def test_loki_logging_handler(httpserver, ot_handler):
-    ot_handler.flush()
     assert len(httpserver.log) == 0
 
     ot_handler.emit(
@@ -43,8 +43,7 @@ def test_loki_logging_handler(httpserver, ot_handler):
             "test_ERROR", logging.ERROR, "test_ERROR", 0, "test ERROR log", (), None
         )
     )
-    ot_handler.flush()
-    assert len(httpserver.log) == 1
+    wait_for_logs(httpserver, 1)
 
     ot_handler.emit(
         logging.LogRecord(
@@ -57,5 +56,4 @@ def test_loki_logging_handler(httpserver, ot_handler):
             None,
         )
     )
-    ot_handler.flush()
-    assert len(httpserver.log) == 2
+    wait_for_logs(httpserver, 2)
