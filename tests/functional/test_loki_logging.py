@@ -29,31 +29,21 @@ def httpserver(httpserver: HTTPServer):
 
 
 @pytest.mark.usefixtures("base_config_with_logging")
-def test_loki_logging_handler(httpserver):
+def test_loki_logging_full_chain(httpserver):
     loki_url = httpserver.url_for("/otlp/v1/logs")
     log_conf = config().logging
     log_conf.OTLP_endpoint = loki_url
 
     ot_handler = getOpenTelemetryLoggingHandler(log_conf)
 
+    test_logger = logging.getLogger("test_loki")
+    test_logger.addHandler(ot_handler)
+    test_logger.setLevel(logging.DEBUG)
+
     assert len(httpserver.log) == 0
 
-    ot_handler.emit(
-        logging.LogRecord(
-            "test_ERROR", logging.ERROR, "test_ERROR", 0, "test ERROR log", (), None
-        )
-    )
+    test_logger.error("test ERROR log")
     wait_for_logs(httpserver, 1)
 
-    ot_handler.emit(
-        logging.LogRecord(
-            "test_WARNING",
-            logging.WARNING,
-            "test_WARNING",
-            0,
-            "test WARNING log",
-            (),
-            None,
-        )
-    )
+    test_logger.warning("test WARNING log")
     wait_for_logs(httpserver, 2)
