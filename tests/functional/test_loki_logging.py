@@ -1,7 +1,6 @@
 # test logging to loki service
 
 import logging
-import time
 
 import gifnoc
 import pytest
@@ -10,16 +9,6 @@ from opentelemetry.sdk._logs import LoggingHandler
 from pytest_httpserver import HTTPServer
 
 from sarc.logging import setupLogging
-
-
-def wait_for_logs(httpserver, expected, timeout=5):
-    deadline = time.time() + timeout
-    while len(httpserver.log) < expected:
-        if time.time() > deadline:
-            raise AssertionError(
-                f"Expected {expected} log requests, got {len(httpserver.log)}"
-            )
-        time.sleep(0.05)
 
 
 @pytest.fixture
@@ -52,20 +41,29 @@ def test_setup_logging_configures_opentelemetry(httpserver, config_with_logging)
     original_level = root_logger.level
 
     try:
+        # Prevent recursive logging: werkzeug logs each HTTP request it receives,
+        # which would be sent to the OT handler on the root logger, triggering
+        # another HTTP request, and so on infinitely.
+        logging.getLogger("werkzeug").propagate = False
+
         setupLogging()
+        provider = get_logger_provider()
 
         # Verify setupLogging installed an OpenTelemetry handler on root logger
         ot_handlers = [h for h in root_logger.handlers if isinstance(h, LoggingHandler)]
         assert len(ot_handlers) == 1
 
+        provider.force_flush(timeout_millis=5000)
         assert len(httpserver.log) == 0
 
         logger = logging.getLogger("test_loki")
         logger.error("test ERROR log")
-        wait_for_logs(httpserver, 1)
+        provider.force_flush(timeout_millis=5000)
+        assert len(httpserver.log) == 1
 
         logger.warning("test WARNING log")
-        wait_for_logs(httpserver, 2)
+        provider.force_flush(timeout_millis=5000)
+        assert len(httpserver.log) == 2
     finally:
         get_logger_provider().shutdown()
         root_logger.handlers = original_handlers
