@@ -2,16 +2,16 @@ import argparse
 import contextlib
 import logging
 import sys
+from collections import defaultdict
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from jedi.inference.gradual.typing import Callable
-from mypy.checkpattern import defaultdict
 from tqdm import tqdm
 
 from sarc.client.gpumetrics import get_rgus
-from sarc.client.job import _jobs_collection, SlurmJob
+from sarc.client.job import SlurmJob, _jobs_collection
 
 logger = logging.getLogger("sarc-metrics")
 
@@ -35,11 +35,11 @@ class ScopeMetrics:
 
     @property
     def nb_jobs_per_unique_user(self) -> float:
-        return self.nb_unique_jobs / self.nb_unique_users
+        return self.nb_unique_jobs / (self.nb_unique_users or 1)
 
     @property
     def rgu_sec_per_unique_user(self) -> float:
-        return self.total_rgu_seconds / self.nb_unique_users
+        return self.total_rgu_seconds / (self.nb_unique_users or 1)
 
     def __str__(self):
         pieces = [
@@ -49,7 +49,7 @@ class ScopeMetrics:
             f"Total RGU*seconds:           {self.total_rgu_seconds}",
             f"Jobs per unique user:        {self.nb_jobs_per_unique_user}",
             f"RGU*seconds per unique user: {self.rgu_sec_per_unique_user}",
-            f"Greatest consumers:",
+            "Greatest consumers:",
         ]
         sorted_consumers = sorted(
             self.unique_user_to_rgu_sec.items(), key=lambda item: (-item[1], item[0])
@@ -94,9 +94,15 @@ class JobAggregation:
 
         # Compute job RGUs*second inside this time frame
         gpu_type_rgu = self._get_gpu_type_rgu(job)
-        job_rgu_seconds = 0 if gpu_type_rgu is None else gpu_type_rgu * consumed_seconds
+        if gpu_type_rgu is None:
+            logger.error(
+                f"Job {job.cluster_name}/{job.job_id}: cannot infer RGU for GPU type: {job.allocated.gpu_type}"
+            )
+            return
+
+        job_rgu_seconds = gpu_type_rgu * consumed_seconds
         # Aggregate RGUs*second per job.
-        # If a jab was rescheduled many times inside this time frame,
+        # If a job was rescheduled many times inside this time frame,
         # and consumed some resources more than 1 time across all these occurrences,
         # then we sum all consumptions for this same job.
         job_key = (job.cluster_name, job.job_id, job.user)
@@ -146,6 +152,15 @@ def _get_output_file(filename: str | Path | None = None):
             output.close()
 
 
+# Cluster to category (default: drac)
+CLUSTER_TO_TYPE = {
+    "mila": "mila",
+    "tamia": "drac-paice",
+    "killarney": "drac-paice",
+    "vulcan": "drac-paice",
+}
+
+
 def show_metrics(
     time_from: datetime,
     time_to: datetime,
@@ -159,7 +174,8 @@ def show_metrics(
     coll_jobs = _jobs_collection()
 
     query = {
-        "submit_time": {"$lte": time_to},
+        "start_time": {"$lte": time_to},
+        "allocated.gpu_type": {"$ne": None},
         "$or": [{"end_time": {"$gte": time_from}}, {"end_time": None}],
     }
 
@@ -168,6 +184,7 @@ def show_metrics(
     print(f"Processing {expected} jobs...")
 
     count = 0
+    now = datetime.now().astimezone()
     with tqdm(total=expected, desc="Analyzing jobs") as pbar:
         # Iterate directly on the cursor without complex pagination
         for job in coll_jobs.find_by(query):
@@ -186,14 +203,16 @@ def show_metrics(
                 continue
 
             # Determine real or "virtual" end (for RUNNING jobs)
-            # Use start_time + elapsed_time if end_time is None
-            job_end = job.end_time or (
-                job.start_time + timedelta(seconds=job.elapsed_time)
+            # Use now if end_time is None, limited by job.time_limit
+            # (or elapsed_time if time_limit absent).
+            job_end = job.end_time or min(
+                now,
+                job.start_time + timedelta(seconds=job.time_limit or job.elapsed_time),
             )
             if job_end < time_from:
                 # Maybe an old running job.
                 logger.debug(
-                    f"{job.cluster_name}/{job.job_id}/{job.job_state.name} end before time frame. Skipping"
+                    f"Job {job.cluster_name}/{job.job_id}/{job.job_state.name} ends before time frame. Skipping"
                 )
                 continue
 
@@ -214,20 +233,14 @@ def show_metrics(
             consumed_seconds = (intersect_end - intersect_start).total_seconds()
             jagg.aggregate(job, consumed_seconds)
 
-    # Cluster to category (default: drac)
-    cluster_to_type = {
-        "mila": "mila",
-        "tamia": "drac-paice",
-        "killarney": "drac-paice",
-        "vulcan": "drac-paice",
-    }
-
     with _get_output_file(output) as file:
         if per_total:
-            print(jagg.report(lambda record: "total")["total"], file=file)
+            report_total = jagg.report(lambda record: "total")
+            if report_total:
+                print(report_total["total"], file=file)
         if per_cluster_type:
             report_per_cluster_type = jagg.report(
-                lambda record: cluster_to_type.get(record.cluster_name, "drac")
+                lambda record: CLUSTER_TO_TYPE.get(record.cluster_name, "drac")
             )
             if report_per_cluster_type:
                 print("Per cluster type:", file=file)
@@ -262,15 +275,28 @@ def main():
     parser.add_argument(
         "-c", "--cluster", action="store_true", help="Show metrics per cluster"
     )
-    parser.add_argument("-o", "--output", type=str, help="Output file (defaults to stdout)")
+    parser.add_argument(
+        "-o", "--output", type=str, help="Output file (defaults to stdout)"
+    )
 
     args = parser.parse_args()
-    time_from = datetime.fromisoformat(args.start)
-    time_to = datetime.fromisoformat(args.end)
+    time_from = datetime.fromisoformat(args.start).astimezone()
+    time_to = datetime.fromisoformat(args.end).astimezone()
+
+    if time_from > time_to:
+        print("Expected time_from <= time_to", time_from, time_to, file=sys.stderr)
+        sys.exit(1)
+
     per_total = args.all or args.total
     per_cluster_type = args.all or args.cluster_type
     per_cluster = args.all or args.cluster
     output = args.output
+
+    if not per_total and not per_cluster_type and not per_cluster:
+        print(
+            "No metrics required, nothing to do. Pass either --all, --total, --cluster-type or --cluster."
+        )
+        sys.exit(1)
 
     show_metrics(
         time_from,
