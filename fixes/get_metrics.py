@@ -12,6 +12,7 @@ from tqdm import tqdm
 
 from sarc.client.gpumetrics import get_rgus
 from sarc.client.job import SlurmJob, _jobs_collection
+from sarc.config import ClusterConfig, config
 
 logger = logging.getLogger("sarc-metrics")
 
@@ -71,13 +72,26 @@ class _JobRecord:
 
 
 class JobAggregation:
-    __slots__ = ("_gpu_type_to_rgu", "_jobs_rgu", "_time_from", "_time_to")
+    __slots__ = (
+        "_gpu_type_to_rgu",
+        "_jobs_rgu",
+        "_time_from",
+        "_time_to",
+        "_cluster_configs",
+    )
 
     def __init__(self, time_from: datetime, time_to: datetime):
         self._time_from = time_from
         self._time_to = time_to
         self._gpu_type_to_rgu = get_rgus()
         self._jobs_rgu: dict[tuple, _JobRecord] = {}
+        self._cluster_configs: dict[str, ClusterConfig] = {}
+
+    def _harmonize_gpu(self, job: SlurmJob) -> str | None:
+        if not self._cluster_configs:
+            self._cluster_configs = config("scraping").clusters
+        cluster_cfg = self._cluster_configs[job.cluster_name]
+        return cluster_cfg.harmonize_gpu_from_nodes(job.nodes, job.allocated.gpu_type)
 
     def _get_gpu_type_rgu(self, job: SlurmJob) -> float | None:
         gpu_type = job.allocated.gpu_type
@@ -87,7 +101,16 @@ class JobAggregation:
         # (e.g: "A100-SXM4-40GB : a100_1g.5gb"),
         # we currently return RGU for the main GPU type
         # (in this example: "A100-SXM4-40GB")
-        return self._gpu_type_to_rgu.get(gpu_type.split(":")[0].rstrip(), None)
+        gpu_type = gpu_type.split(":")[0].rstrip()
+        if gpu_type not in self._gpu_type_to_rgu:
+            h_gpu_type = self._harmonize_gpu(job)
+            if h_gpu_type is not None:
+                logger.warning(
+                    f"had to manually harmonize GPU type for job "
+                    f"{job.cluster_name}/{job.job_id}: {gpu_type} -> {h_gpu_type}"
+                )
+                gpu_type = h_gpu_type.split(":")[0].rstrip()
+        return self._gpu_type_to_rgu.get(gpu_type, None)
 
     def aggregate(self, job: SlurmJob, consumed_seconds: float) -> None:
         """Save job record and related RGUs*second"""
