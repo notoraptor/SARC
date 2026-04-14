@@ -1,7 +1,12 @@
+import argparse
+import contextlib
 import logging
-from dataclasses import dataclass
+import sys
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta
+from pathlib import Path
 
+from jedi.inference.gradual.typing import Callable
 from mypy.checkpattern import defaultdict
 from tqdm import tqdm
 
@@ -12,27 +17,69 @@ logger = logging.getLogger("sarc-metrics")
 
 
 @dataclass(slots=True)
-class Metrics:
+class ScopeMetrics:
     time_from: datetime
     time_to: datetime
+    scope_name: str
 
-    nb_unique_users: int
-    nb_unique_jobs: int
-    nb_jobs_per_unique_user: float
+    nb_unique_jobs: int = 0
+    total_rgu_seconds: float = 0.0
+    unique_users: set[str] = field(default_factory=set)
+    unique_user_to_rgu_sec: dict[str, float] = field(
+        default_factory=lambda: defaultdict(float)
+    )
 
-    total_rgu_seconds: float
-    rgu_sec_per_unique_user: dict[str, float]
-    rgu_sec_per_cluster_type: dict[str, float]
-    rgu_sec_per_cluster: dict[str, float]
+    @property
+    def nb_unique_users(self) -> int:
+        return len(self.unique_users)
+
+    @property
+    def nb_jobs_per_unique_user(self) -> float:
+        return self.nb_unique_jobs / self.nb_unique_users
+
+    @property
+    def rgu_sec_per_unique_user(self) -> float:
+        return self.total_rgu_seconds / self.nb_unique_users
+
+    def __str__(self):
+        pieces = [
+            f"[{self.scope_name} - {self.time_from} - {self.time_to}]",
+            f"Unique users:                {self.nb_unique_users}",
+            f"Unique jobs:                 {self.nb_unique_jobs}",
+            f"Total RGU*seconds:           {self.total_rgu_seconds}",
+            f"Jobs per unique user:        {self.nb_jobs_per_unique_user}",
+            f"RGU*seconds per unique user: {self.rgu_sec_per_unique_user}",
+            f"Greatest consumers:",
+        ]
+        sorted_consumers = sorted(
+            self.unique_user_to_rgu_sec.items(), key=lambda item: (-item[1], item[0])
+        )
+        for consumed, rgu_sec in sorted_consumers[:20]:
+            pieces.append(f"\t{consumed}: {rgu_sec}")
+        if len(sorted_consumers) > 20:
+            pieces.append(f"\t(... first 20 of {len(sorted_consumers)})")
+        return "\n".join(pieces) + "\n\n"
 
 
-class Computation:
-    __slots__ = ("_gpu_type_to_rgu",)
+@dataclass(slots=True)
+class _JobRecord:
+    cluster_name: str
+    job_id: int
+    user: str
 
-    def __init__(self):
+    total_rgu_seconds: float = 0.0
+
+
+class JobAggregation:
+    __slots__ = ("_gpu_type_to_rgu", "_jobs_rgu", "_time_from", "_time_to")
+
+    def __init__(self, time_from: datetime, time_to: datetime):
+        self._time_from = time_from
+        self._time_to = time_to
         self._gpu_type_to_rgu = get_rgus()
+        self._jobs_rgu: dict[tuple, _JobRecord] = {}
 
-    def get_gpu_type_rgu(self, job: SlurmJob) -> float | None:
+    def _get_gpu_type_rgu(self, job: SlurmJob) -> float | None:
         gpu_type = job.allocated.gpu_type
         if gpu_type is None:
             return None
@@ -42,11 +89,74 @@ class Computation:
         # (in this example: "A100-SXM4-40GB")
         return self._gpu_type_to_rgu.get(gpu_type.split(":")[0].rstrip(), None)
 
+    def aggregate(self, job: SlurmJob, consumed_seconds: float) -> None:
+        """Save job record and related RGUs*second"""
 
-def get_metrics(time_from: datetime, time_to: datetime):
-    computer = Computation()
+        # Compute job RGUs*second inside this time frame
+        gpu_type_rgu = self._get_gpu_type_rgu(job)
+        job_rgu_seconds = 0 if gpu_type_rgu is None else gpu_type_rgu * consumed_seconds
+        # Aggregate RGUs*second per job.
+        # If a jab was rescheduled many times inside this time frame,
+        # and consumed some resources more than 1 time across all these occurrences,
+        # then we sum all consumptions for this same job.
+        job_key = (job.cluster_name, job.job_id, job.user)
+        if job_key in self._jobs_rgu:
+            self._jobs_rgu[job_key].total_rgu_seconds += job_rgu_seconds
+        else:
+            self._jobs_rgu[job_key] = _JobRecord(
+                job.cluster_name, job.job_id, job.user, job_rgu_seconds
+            )
+
+    def report(
+        self, classifier: Callable[[_JobRecord], str]
+    ) -> dict[str, ScopeMetrics]:
+        """
+        Compute metrics, using given classifier.
+
+        Classifier must associate a job record to a scope name.
+
+        Returns a dictionary mapping a scope name to computed ScopeMetrics.
+        """
+        name_to_metrics: dict[str, ScopeMetrics] = {}
+        for record in self._jobs_rgu.values():
+            name = classifier(record)
+            if name not in name_to_metrics:
+                name_to_metrics[name] = ScopeMetrics(
+                    time_from=self._time_from, time_to=self._time_to, scope_name=name
+                )
+            scope = name_to_metrics[name]
+            scope.nb_unique_jobs += 1
+            scope.unique_users.add(record.user)
+            scope.total_rgu_seconds += record.total_rgu_seconds
+            scope.unique_user_to_rgu_sec[record.user] += record.total_rgu_seconds
+        return name_to_metrics
+
+
+@contextlib.contextmanager
+def _get_output_file(filename: str | Path | None = None):
+    if filename is None:
+        output = sys.stdout
+    else:
+        output = open(filename, mode="w", encoding="utf-8")
+        print("[output]", filename)
+    try:
+        yield output
+    finally:
+        if filename is not None:
+            output.close()
+
+
+def show_metrics(
+    time_from: datetime,
+    time_to: datetime,
+    *,
+    per_total=True,
+    per_cluster_type=True,
+    per_cluster=True,
+    output: str | None = None,
+):
+    jagg = JobAggregation(time_from, time_to)
     coll_jobs = _jobs_collection()
-    job_total_rgu: dict[tuple[str, int], float] = defaultdict(float)
 
     query = {
         "submit_time": {"$lte": time_to},
@@ -102,13 +212,75 @@ def get_metrics(time_from: datetime, time_to: datetime):
 
             # Compute consumed time for this job inside this time frame
             consumed_seconds = (intersect_end - intersect_start).total_seconds()
-            # Compute job RGUs*second inside this time frame
-            gpu_type_rgu = computer.get_gpu_type_rgu(job)
-            job_rgu_seconds = (
-                None if gpu_type_rgu is None else gpu_type_rgu * consumed_seconds
+            jagg.aggregate(job, consumed_seconds)
+
+    # Cluster to category (default: drac)
+    cluster_to_type = {
+        "mila": "mila",
+        "tamia": "drac-paice",
+        "killarney": "drac-paice",
+        "vulcan": "drac-paice",
+    }
+
+    with _get_output_file(output) as file:
+        if per_total:
+            print(jagg.report(lambda record: "total")["total"], file=file)
+        if per_cluster_type:
+            report_per_cluster_type = jagg.report(
+                lambda record: cluster_to_type.get(record.cluster_name, "drac")
             )
-            # Aggregate RGUs*second per job
-            # If a jab was rescheduled many times inside this time frame,
-            # and consumed some resources more than 1 time across all these occurrences,
-            # then we sum all consumptions for this same job
-            job_total_rgu[(job.cluster_name, job.job_id)] += job_rgu_seconds
+            if report_per_cluster_type:
+                print("Per cluster type:", file=file)
+                print("=================", file=file)
+                print(file=file)
+                for cluster_type in sorted(report_per_cluster_type.keys()):
+                    print(report_per_cluster_type[cluster_type], file=file)
+        if per_cluster:
+            report_per_cluster = jagg.report(lambda record: record.cluster_name)
+            if report_per_cluster:
+                print("Per cluster:", file=file)
+                print("============", file=file)
+                print(file=file)
+                for cluster in sorted(report_per_cluster.keys()):
+                    print(report_per_cluster[cluster], file=file)
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("-s", "--start", type=str, required=True)
+    parser.add_argument("-e", "--end", type=str, required=True)
+    parser.add_argument("-a", "--all", action="store_true", help="Show all metrics")
+    parser.add_argument(
+        "-t", "--total", action="store_true", help="Show metrics for total"
+    )
+    parser.add_argument(
+        "-d",
+        "--cluster-type",
+        action="store_true",
+        help="Show metrics per cluster type",
+    )
+    parser.add_argument(
+        "-c", "--cluster", action="store_true", help="Show metrics per cluster"
+    )
+    parser.add_argument("-o", "--output", type=str, help="Output file (defaults to stdout)")
+
+    args = parser.parse_args()
+    time_from = datetime.fromisoformat(args.start)
+    time_to = datetime.fromisoformat(args.end)
+    per_total = args.all or args.total
+    per_cluster_type = args.all or args.cluster_type
+    per_cluster = args.all or args.cluster
+    output = args.output
+
+    show_metrics(
+        time_from,
+        time_to,
+        per_total=per_total,
+        per_cluster_type=per_cluster_type,
+        per_cluster=per_cluster,
+        output=output,
+    )
+
+
+if __name__ == "__main__":
+    main()
