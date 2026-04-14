@@ -1,9 +1,9 @@
 from io import StringIO
-from typing import Iterable, Any
+from typing import Any, Iterable
 
 from tqdm import tqdm
 
-from sarc.client.job import SlurmJob, _jobs_collection, SlurmState
+from sarc.client.job import SlurmJob, SlurmState, _jobs_collection
 from sarc.config import config
 
 
@@ -14,10 +14,7 @@ def main():
     # allocated.gres_gpu is either None or > 0, neither 0.
     assert (
         db_jobs.count_documents(
-            {
-                "requested.gres_gpu": {"$gt": 0},
-                "allocated.gres_gpu": 0,
-            }
+            {"requested.gres_gpu": {"$gt": 0}, "allocated.gres_gpu": 0}
         )
         == 0
     )
@@ -34,10 +31,7 @@ def main():
         == 0
     )
 
-    query = {
-        "requested.gres_gpu": {"$gt": 0},
-        "allocated.gres_gpu": None,
-    }
+    query = {"requested.gres_gpu": {"$gt": 0}, "allocated.gres_gpu": None}
     expected = db_jobs.count_documents(query)
     print("Jobs with query:", query)
     print("expected", expected)

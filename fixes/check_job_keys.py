@@ -1,9 +1,8 @@
 import csv
 import sys
-
-from sarc.client import get_jobs
 from datetime import datetime, timedelta
 
+from sarc.client import get_jobs
 from sarc.config import MTL
 
 

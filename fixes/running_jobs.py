@@ -1,12 +1,12 @@
 import logging
 from collections import Counter
 from dataclasses import dataclass
-from datetime import timedelta, datetime, UTC
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from tqdm import tqdm
 
-from sarc.alerts.common import HealthCheck, CheckResult
+from sarc.alerts.common import CheckResult, HealthCheck
 from sarc.client.job import SlurmJob
 from sarc.core.models.validators import datetime_utc
 
@@ -28,7 +28,7 @@ def check_running_jobs(since: datetime_utc | None = None) -> bool:
     bool
         True if check succeeds (no old RUNNING job in database), False otherwise.
     """
-    from sarc.client.job import _jobs_collection, SlurmState
+    from sarc.client.job import SlurmState, _jobs_collection
 
     now = datetime.now(tz=UTC)
     coll_jobs = _jobs_collection()

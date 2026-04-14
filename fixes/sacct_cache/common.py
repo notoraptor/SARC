@@ -3,11 +3,11 @@ import sys
 from datetime import datetime
 from typing import Generator
 
+from sarc.jobs.sacct import SAcctScraper
 from tqdm import tqdm
 
 from sarc.client.job import SlurmJob
-from sarc.config import config, MTL
-from sarc.jobs.sacct import SAcctScraper
+from sarc.config import MTL, config
 from sarc.traces import trace_decorator
 
 

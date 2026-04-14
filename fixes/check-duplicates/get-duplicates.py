@@ -11,10 +11,7 @@ def main():
     pipeline = [
         {
             "$group": {
-                "_id": {
-                    "cluster_name": "$cluster_name",
-                    "job_id": "$job_id",
-                },
+                "_id": {"cluster_name": "$cluster_name", "job_id": "$job_id"},
                 "count": {"$sum": 1},
                 "items": {
                     "$push": {

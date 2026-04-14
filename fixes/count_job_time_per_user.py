@@ -28,10 +28,7 @@ def main():
     # 2. FINISHED after the start of 2025 OR still running (None)
     query = {
         "submit_time": {"$lt": time_to},
-        "$or": [
-            {"end_time": {"$gte": time_from}},
-            {"end_time": None},
-        ],
+        "$or": [{"end_time": {"$gte": time_from}}, {"end_time": None}],
     }
 
     print(f"Counting jobs for period {time_from} to {time_to}...")

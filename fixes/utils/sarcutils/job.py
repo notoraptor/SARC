@@ -1,8 +1,8 @@
 import bisect
-import sys
-from sarc.client import get_jobs, get_cluster_gpu_billings
 import pprint
+import sys
 
+from sarc.client import get_cluster_gpu_billings, get_jobs
 from sarc.client.gpumetrics import GPUBilling
 from sarc.client.job import SlurmJob
 from sarc.jobs.node_gpu_mapping import get_node_to_gpu

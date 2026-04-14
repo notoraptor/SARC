@@ -1,12 +1,9 @@
 import sys
-
 from collections import Counter
-from datetime import timedelta, datetime
+from datetime import datetime, timedelta
 
-from fixes.sacct_cache.classifier_cache_jobs import get_classified_cache_jobs, JobInfo
-from fixes.sacct_cache.job_state_classifier import (
-    EPOCHS,
-)
+from fixes.sacct_cache.classifier_cache_jobs import JobInfo, get_classified_cache_jobs
+from fixes.sacct_cache.job_state_classifier import EPOCHS
 from sarc.client.job import SlurmState
 
 

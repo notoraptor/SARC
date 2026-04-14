@@ -1,11 +1,9 @@
-from typing import Callable, Any, TypeVar
+from collections import Counter
+from datetime import datetime
+from typing import Any, Callable, TypeVar
 
 from fixes.db_job_iterator import get_database_jobs
-from datetime import datetime
-from collections import Counter
-
 from sarc.config import UTC
-
 
 T = TypeVar("T")
 
