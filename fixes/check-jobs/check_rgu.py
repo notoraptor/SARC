@@ -3,10 +3,10 @@ import json
 import os
 
 from sarc.client import (
-    load_job_series,
-    update_job_series_rgu,
     get_available_clusters,
     get_cluster_gpu_billings,
+    load_job_series,
+    update_job_series_rgu,
 )
 from sarc.client.job import SlurmState
 
@@ -64,10 +64,7 @@ def main():
     # Save RAW dataframe in output folder
     with open(f"{output_dir}/{cluster_name}.raw.md", mode="w") as file:
         print("Rows:", len(df), file=file)
-        print(
-            df[MARKDOWN_FIELDS].to_markdown(),
-            file=file,
-        )
+        print(df[MARKDOWN_FIELDS].to_markdown(), file=file)
 
     # Get RGU
     update_job_series_rgu(df)
@@ -75,10 +72,7 @@ def main():
     # Save RGU dataframe in output folder
     with open(f"{output_dir}/{cluster_name}.rgu.md", mode="w") as file:
         print("Rows:", len(df), file=file)
-        print(
-            df[MARKDOWN_FIELDS_WITH_RGU].to_markdown(),
-            file=file,
-        )
+        print(df[MARKDOWN_FIELDS_WITH_RGU].to_markdown(), file=file)
 
     # Print some debug info
 

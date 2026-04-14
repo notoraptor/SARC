@@ -1,10 +1,6 @@
 import argparse
 
-from sarc.client import (
-    load_job_series,
-    update_job_series_rgu,
-    get_available_clusters,
-)
+from sarc.client import get_available_clusters, load_job_series, update_job_series_rgu
 
 START = "2025-06-01"
 END = "2025-07-01"

@@ -1,5 +1,5 @@
 from sarc.client import get_jobs
-from sarc.client.job import SlurmState, SlurmJob
+from sarc.client.job import SlurmJob, SlurmState
 
 START = "2025-06-01"
 END = "2025-07-01"

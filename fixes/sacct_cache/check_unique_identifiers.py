@@ -1,5 +1,4 @@
 import sys
-
 from collections import Counter
 
 from fixes.sacct_cache.job_state_classifier import EPOCHS, get_states_classifier

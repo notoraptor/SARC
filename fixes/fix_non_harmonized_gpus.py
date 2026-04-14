@@ -6,7 +6,7 @@ from tqdm import tqdm
 
 from sarc.client import get_rgus
 from sarc.client.job import _jobs_collection
-from sarc.config import config, scraping_mode_required, MTL
+from sarc.config import MTL, config, scraping_mode_required
 
 
 @scraping_mode_required
@@ -30,9 +30,7 @@ def main():
     print(f"Oldest time: {oldest_time} (since {newest_time - oldest_time})")
 
     # Count GPU jobs with non-harmonized GPUs.
-    base_query = {
-        "allocated.gpu_type": {"$ne": None, "$nin": harmonized_names},
-    }
+    base_query = {"allocated.gpu_type": {"$ne": None, "$nin": harmonized_names}}
     print("Counting non-harmonized GPUs ...")
     expected = config().mongo.database_instance.jobs.count_documents(base_query)
     print("Non-harmonized GPUs:", expected)
@@ -47,10 +45,7 @@ def main():
             # Get jobs so that: current_time <= job.submit_time < current_time + interval
             next_time = current_time + interval
             for job in coll_jobs.find_by(
-                {
-                    **base_query,
-                    "submit_time": {"$gte": current_time, "$lt": next_time},
-                }
+                {**base_query, "submit_time": {"$gte": current_time, "$lt": next_time}}
             ):
                 assert job.allocated.gpu_type is not None
                 assert job.allocated.gpu_type not in harmonized_set

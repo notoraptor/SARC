@@ -4,7 +4,6 @@ from typing import Literal, TypeAlias
 
 from fixes.sacct_cache.common import get_sacct_scrapers
 from sarc.cache import with_cache
-
 from sarc.config import MTL, config
 
 EPOCH_LIMITS = {"cedar": "2023-05-03", "graham": "2022-11-02"}

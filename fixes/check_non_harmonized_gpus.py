@@ -2,7 +2,7 @@ import pprint
 
 from fixes.db_job_iterator import get_database_jobs
 from fixes.utils.outputfile import get_output_file
-from sarc.client import get_rgus, get_available_clusters, get_cluster_gpu_billings
+from sarc.client import get_available_clusters, get_cluster_gpu_billings, get_rgus
 
 
 def main():
@@ -19,9 +19,7 @@ def main():
         print("Harmonized names:", len(harmonized_names))
         assert len(harmonized_set) == len(harmonized_names), harmonized_names
 
-        base_query = {
-            "allocated.gpu_type": {"$ne": None, "$nin": harmonized_names},
-        }
+        base_query = {"allocated.gpu_type": {"$ne": None, "$nin": harmonized_names}}
         for job in get_database_jobs(base_query):
             gpu_type = job.allocated.gpu_type
             if any(

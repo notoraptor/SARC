@@ -4,7 +4,7 @@ from typing import Iterable
 from tqdm import tqdm
 
 from sarc.client.job import SlurmJob, _jobs_collection
-from sarc.config import config, UTC
+from sarc.config import UTC, config
 
 
 def get_database_jobs(base_query: dict | None = None) -> Iterable[SlurmJob]:
@@ -33,10 +33,7 @@ def get_database_jobs(base_query: dict | None = None) -> Iterable[SlurmJob]:
             # Get jobs so that: current_time <= job.submit_time < current_time + interval
             next_time = current_time + interval
             for job in coll_jobs.find_by(
-                {
-                    **base_query,
-                    "submit_time": {"$gte": current_time, "$lt": next_time},
-                },
+                {**base_query, "submit_time": {"$gte": current_time, "$lt": next_time}},
                 sort=[("submit_time", 1)],
             ):
                 yield job
@@ -45,6 +42,4 @@ def get_database_jobs(base_query: dict | None = None) -> Iterable[SlurmJob]:
             current_time = next_time
 
     if count != expected:
-        raise RuntimeError(
-            f"Expected {expected} jobs, actually processed {count} jobs",
-        )
+        raise RuntimeError(f"Expected {expected} jobs, actually processed {count} jobs")

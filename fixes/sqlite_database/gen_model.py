@@ -1,7 +1,8 @@
-import inspect
 import datetime
+import inspect
 import types
-from typing import get_origin, get_args, Union
+from typing import Union, get_args, get_origin
+
 from pydantic import BaseModel
 from pydantic_mongo import PydanticObjectId
 

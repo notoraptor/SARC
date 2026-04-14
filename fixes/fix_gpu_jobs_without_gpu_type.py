@@ -18,7 +18,7 @@ from datetime import datetime, timedelta
 from tqdm import tqdm
 
 from sarc.client.job import SlurmJob, _jobs_collection
-from sarc.config import config, scraping_mode_required, MTL
+from sarc.config import MTL, config, scraping_mode_required
 from sarc.jobs.node_gpu_mapping import get_node_to_gpu
 
 
@@ -58,10 +58,7 @@ def main():
             # Get jobs so that: current_time <= job.submit_time < current_time + interval
             next_time = current_time + interval
             for job in coll_jobs.find_by(
-                {
-                    **base_query,
-                    "submit_time": {"$gte": current_time, "$lt": next_time},
-                }
+                {**base_query, "submit_time": {"$gte": current_time, "$lt": next_time}}
             ):
                 gpu_type = get_harmonized_gpu_type(job)
                 if gpu_type is not None:

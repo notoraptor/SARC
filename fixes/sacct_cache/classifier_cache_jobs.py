@@ -1,11 +1,9 @@
 import os
-
 from typing import Literal, TypedDict
 
 from fixes.sacct_cache.common import get_sacct_scrapers
 from fixes.sacct_cache.job_state_classifier import EPOCHS
 from sarc.cache import with_cache
-
 from sarc.config import config
 
 

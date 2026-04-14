@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 from tqdm import tqdm
 
 from sarc.client.job import _jobs_collection
-from sarc.config import config, MTL
+from sarc.config import MTL, config
 
 
 def main():
@@ -43,10 +43,7 @@ def main():
             # Get jobs so that: current_time <= job.submit_time < current_time + interval
             next_time = current_time + interval
             for job in coll_jobs.find_by(
-                {
-                    **base_query,
-                    "submit_time": {"$gte": current_time, "$lt": next_time},
-                }
+                {**base_query, "submit_time": {"$gte": current_time, "$lt": next_time}}
             ):
                 # work with job
                 job_keys.add((job.job_id, job.submit_time))
