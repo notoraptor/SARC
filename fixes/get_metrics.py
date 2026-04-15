@@ -1,11 +1,14 @@
+"""
+SARC_MODE=scraping SARC_CONFIG=secrets/sarc-client-distant.yaml uv run fixes/get_metrics.py --start 2026-04-07T00:00 --end 2026-04-07T17:35 -o report.txt --all
+"""
+
 import argparse
 import contextlib
 import logging
 import sys
-from collections import defaultdict
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from tqdm import tqdm
@@ -26,9 +29,7 @@ class ScopeMetrics:
     nb_unique_jobs: int = 0
     total_rgu_seconds: float = 0.0
     unique_users: set[str] = field(default_factory=set)
-    unique_user_to_rgu_sec: dict[str, float] = field(
-        default_factory=lambda: defaultdict(float)
-    )
+    unique_user_to_rgu_sec: dict[str, float] = field(default_factory=dict)
 
     @property
     def nb_unique_users(self) -> int:
@@ -44,19 +45,19 @@ class ScopeMetrics:
 
     def __str__(self):
         pieces = [
-            f"[{self.scope_name} - {self.time_from} - {self.time_to}]",
-            f"Unique users:                {self.nb_unique_users}",
-            f"Unique jobs:                 {self.nb_unique_jobs}",
-            f"Total RGU*seconds:           {self.total_rgu_seconds}",
-            f"Jobs per unique user:        {self.nb_jobs_per_unique_user}",
-            f"RGU*seconds per unique user: {self.rgu_sec_per_unique_user}",
+            f"[{self.scope_name} - {self.time_from.isoformat()} - {self.time_to.isoformat()}]",
+            f"Unique users:                {self.nb_unique_users:_}",
+            f"Unique jobs:                 {self.nb_unique_jobs:_}",
+            f"Total RGU*seconds:           {self.total_rgu_seconds:_}",
+            f"Jobs per unique user:        {self.nb_jobs_per_unique_user:_}",
+            f"RGU*seconds per unique user: {self.rgu_sec_per_unique_user:_}",
             "Greatest consumers:",
         ]
         sorted_consumers = sorted(
             self.unique_user_to_rgu_sec.items(), key=lambda item: (-item[1], item[0])
         )
         for consumed, rgu_sec in sorted_consumers[:20]:
-            pieces.append(f"\t{consumed}: {rgu_sec}")
+            pieces.append(f"\t{consumed}: {rgu_sec:_}")
         if len(sorted_consumers) > 20:
             pieces.append(f"\t(... first 20 of {len(sorted_consumers)})")
         return "\n".join(pieces) + "\n\n"
@@ -88,6 +89,13 @@ class JobAggregation:
         self._cluster_configs: dict[str, ClusterConfig] = {}
 
     def _harmonize_gpu(self, job: SlurmJob) -> str | None:
+        """
+        Fallback: harmonize GPU type, if not yet harmonized in job.allocated.gpu_type.
+
+        If this happens, then we may need to update `gpus_per_nodes` for job cluster
+        in SARC configuration file, then either re-run `parse jobs`, or use a dedicated
+        script to fix harmonized GPUs in SARC database.
+        """
         if not self._cluster_configs:
             self._cluster_configs = config("scraping").clusters
         cluster_cfg = self._cluster_configs[job.cluster_name]
@@ -97,11 +105,14 @@ class JobAggregation:
         gpu_type = job.allocated.gpu_type
         if gpu_type is None:
             return None
+
         # NB: If GPU type is a MIG
         # (e.g: "A100-SXM4-40GB : a100_1g.5gb"),
         # we currently return RGU for the main GPU type
         # (in this example: "A100-SXM4-40GB")
         gpu_type = gpu_type.split(":")[0].rstrip()
+
+        # If GPU type not found, maybe it's not yet harmonized.
         if gpu_type not in self._gpu_type_to_rgu:
             h_gpu_type = self._harmonize_gpu(job)
             if h_gpu_type is not None:
@@ -110,6 +121,7 @@ class JobAggregation:
                     f"{job.cluster_name}/{job.job_id}: {gpu_type} -> {h_gpu_type}"
                 )
                 gpu_type = h_gpu_type.split(":")[0].rstrip()
+
         return self._gpu_type_to_rgu.get(gpu_type, None)
 
     def aggregate(self, job: SlurmJob, consumed_seconds: float) -> None:
@@ -157,6 +169,8 @@ class JobAggregation:
             scope.nb_unique_jobs += 1
             scope.unique_users.add(record.user)
             scope.total_rgu_seconds += record.total_rgu_seconds
+
+            scope.unique_user_to_rgu_sec.setdefault(record.user, 0.0)
             scope.unique_user_to_rgu_sec[record.user] += record.total_rgu_seconds
         return name_to_metrics
 
@@ -207,7 +221,6 @@ def show_metrics(
     print(f"Processing {expected} jobs...")
 
     count = 0
-    now = datetime.now().astimezone()
     with tqdm(total=expected, desc="Analyzing jobs") as pbar:
         # Iterate directly on the cursor without complex pagination
         for job in coll_jobs.find_by(query):
@@ -225,17 +238,20 @@ def show_metrics(
             if job.start_time is None:
                 continue
 
-            # Determine real or "virtual" end (for RUNNING jobs)
-            # Use now if end_time is None, limited by job.time_limit
-            # (or elapsed_time if time_limit absent).
-            job_end = job.end_time or min(
-                now,
-                job.start_time + timedelta(seconds=job.time_limit or job.elapsed_time),
+            # Determine real or "virtual" end (for RUNNING jobs).
+            # If end_time is None, use start_time + elapsed_time.
+            # We don't use current time (now), to avoid any assumption about
+            # a running job (we don't know if it really ran until current time).
+            # We rely only on available info from latest SLURM scraping.
+            job_end = job.end_time or (
+                job.start_time + timedelta(seconds=job.elapsed_time)
             )
             if job_end < time_from:
                 # Maybe an old running job.
                 logger.debug(
-                    f"Job {job.cluster_name}/{job.job_id}/{job.job_state.name} ends before time frame. Skipping"
+                    f"Job {job.cluster_name}/{job.job_id}/{job.job_state.name} ends before time frame: "
+                    f"submit {job.submit_time}, start {job.start_time}, end {job.end_time}, "
+                    f"elapsed {job.elapsed_time}, used end: {job_end}. Skipping"
                 )
                 continue
 
@@ -282,6 +298,8 @@ def show_metrics(
 
 
 def main():
+    logging.basicConfig(level=logging.INFO, force=True)
+
     parser = argparse.ArgumentParser()
     parser.add_argument("-s", "--start", type=str, required=True)
     parser.add_argument("-e", "--end", type=str, required=True)
@@ -303,8 +321,8 @@ def main():
     )
 
     args = parser.parse_args()
-    time_from = datetime.fromisoformat(args.start).astimezone()
-    time_to = datetime.fromisoformat(args.end).astimezone()
+    time_from = datetime.fromisoformat(args.start).astimezone(UTC)
+    time_to = datetime.fromisoformat(args.end).astimezone(UTC)
 
     if time_from > time_to:
         print("Expected time_from <= time_to", time_from, time_to, file=sys.stderr)
@@ -320,6 +338,16 @@ def main():
             "No metrics required, nothing to do. Pass either --all, --total, --cluster-type or --cluster."
         )
         sys.exit(1)
+
+    if output is None:
+        suffixes = []
+        if per_total:
+            suffixes.append("total")
+        if per_cluster_type:
+            suffixes.append("type")
+        if per_cluster:
+            suffixes.append("cluster")
+        output = f"report-{time_from.isoformat()}-{time_to.isoformat()}-{'-'.join(suffixes)}.txt"
 
     show_metrics(
         time_from,
