@@ -339,23 +339,33 @@ def main():
         )
         sys.exit(1)
 
-    if output is None:
-        suffixes = []
-        if per_total:
-            suffixes.append("total")
-        if per_cluster_type:
-            suffixes.append("type")
-        if per_cluster:
-            suffixes.append("cluster")
-        output = f"report-{time_from.isoformat()}-{time_to.isoformat()}-{'-'.join(suffixes)}.txt"
-
     show_metrics(
         time_from,
         time_to,
         per_total=per_total,
         per_cluster_type=per_cluster_type,
         per_cluster=per_cluster,
-        output=output,
+        output=(
+            output
+            or _default_output_path(
+                time_from, time_to, per_total, per_cluster_type, per_cluster
+            )
+        ),
+    )
+
+
+def _default_output_path(
+    time_from, time_to, per_total, per_cluster_type, per_cluster
+) -> str:
+    suffixes = []
+    if per_total:
+        suffixes.append("total")
+    if per_cluster_type:
+        suffixes.append("type")
+    if per_cluster:
+        suffixes.append("cluster")
+    return (
+        f"report-{time_from.isoformat()}-{time_to.isoformat()}-{'-'.join(suffixes)}.txt"
     )
 
 
