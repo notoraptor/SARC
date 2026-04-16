@@ -56,8 +56,8 @@ class ScopeMetrics:
         sorted_consumers = sorted(
             self.unique_user_to_rgu_sec.items(), key=lambda item: (-item[1], item[0])
         )
-        for consumed, rgu_sec in sorted_consumers[:20]:
-            pieces.append(f"\t{consumed}: {rgu_sec:_}")
+        for user, rgu_sec in sorted_consumers[:20]:
+            pieces.append(f"\t{user}: {rgu_sec:_}")
         if len(sorted_consumers) > 20:
             pieces.append(f"\t(... first 20 of {len(sorted_consumers)})")
         return "\n".join(pieces) + "\n\n"
@@ -135,7 +135,14 @@ class JobAggregation:
             )
             return
 
-        job_rgu_seconds = gpu_type_rgu * consumed_seconds
+        gres_gpu = job.allocated.gres_gpu
+        if not gres_gpu:
+            logger.error(
+                f"Job {job.cluster_name}/{job.job_id}: no gres_gpu (gpu_type={job.allocated.gpu_type})"
+            )
+            return
+
+        job_rgu_seconds = gpu_type_rgu * gres_gpu * consumed_seconds
         # Aggregate RGUs*second per job.
         # If a job was rescheduled many times inside this time frame,
         # and consumed some resources more than 1 time across all these occurrences,
@@ -213,6 +220,7 @@ def show_metrics(
     query = {
         "start_time": {"$lte": time_to},
         "allocated.gpu_type": {"$ne": None},
+        "allocated.gres_gpu": {"$ne": None},
         "$or": [{"end_time": {"$gte": time_from}}, {"end_time": None}],
     }
 
