@@ -4,6 +4,7 @@ SARC_MODE=scraping SARC_CONFIG=secrets/sarc-client-distant.yaml uv run fixes/get
 
 import argparse
 import contextlib
+import csv
 import logging
 import sys
 from collections.abc import Callable
@@ -251,6 +252,59 @@ class Report:
                 print(file=file)
                 for cluster in sorted(self.per_cluster.keys()):
                     print(self.per_cluster[cluster], file=file)
+
+    def dump_multi_csv(self, folder: Path):
+        # NB: Not yet used
+        scope_type_metrics: list[tuple[str, str, ScopeMetrics]] = []
+        if self.per_total:
+            scope_type_metrics.append(("total", "total", self.per_total))
+        if self.per_cluster_type:
+            for cluster_type, metrics in self.per_cluster_type.items():
+                scope_type_metrics.append(("domain", cluster_type, metrics))
+        if self.per_cluster:
+            for cluster_name, metrics in self.per_cluster.items():
+                scope_type_metrics.append(("cluster", cluster_name, metrics))
+
+        csv_metrics: list[list] = [
+            [
+                "scope_type",
+                "scope_name",
+                "nb_unique_users",
+                "nb_unique_jobs",
+                "nb_jobs_per_unique_user",
+                "total_rgu_secs",
+                "rgu_sec_per_unique_user",
+            ]
+        ]
+        csvs_users: dict[str, list[list]] = {}
+        for scope, name, metrics in scope_type_metrics:
+            csv_metrics.append(
+                [
+                    scope,
+                    name,
+                    metrics.nb_unique_users,
+                    metrics.nb_unique_jobs,
+                    metrics.nb_jobs_per_unique_user,
+                    metrics.total_rgu_seconds,
+                    metrics.rgu_sec_per_unique_user,
+                ]
+            )
+            csvs_users[f"{scope}-{name}"] = [["user", "rgu_sec"]] + [
+                [user, rgu_sec]
+                for user, rgu_sec in sorted(
+                    metrics.unique_user_to_rgu_sec.items(),
+                    key=lambda item: (-item[1], item[0]),
+                )
+            ]
+
+        _write_csv(folder / "metrics.csv", csv_metrics)
+        for csv_user_name, csv_user_content in csvs_users.items():
+            _write_csv(folder / f"user-to-rgu-{csv_user_name}.csv", csv_user_content)
+
+
+def _write_csv(path: Path, rows: list[list]):
+    with open(path, "w", newline="") as f:
+        csv.writer(f).writerows(rows)
 
 
 def show_metrics(
