@@ -205,6 +205,54 @@ CLUSTER_TO_TYPE = {
 }
 
 
+class Report:
+    __slots__ = ("per_total", "per_cluster_type", "per_cluster")
+
+    def __init__(
+        self,
+        jagg: JobAggregation,
+        *,
+        per_total: bool = False,
+        per_cluster_type: bool = False,
+        per_cluster: bool = False,
+    ):
+        self.per_total: ScopeMetrics | None = None
+        self.per_cluster_type: dict[str, ScopeMetrics] | None = None
+        self.per_cluster: dict[str, ScopeMetrics] | None = None
+
+        if per_total:
+            report_total = jagg.report(lambda record: "total")
+            if report_total:
+                self.per_total = report_total["total"]
+        if per_cluster_type:
+            report_per_cluster_type = jagg.report(
+                lambda record: CLUSTER_TO_TYPE.get(record.cluster_name, "drac")
+            )
+            if report_per_cluster_type:
+                self.per_cluster_type = report_per_cluster_type
+        if per_cluster:
+            report_per_cluster = jagg.report(lambda record: record.cluster_name)
+            if report_per_cluster:
+                self.per_cluster = report_per_cluster
+
+    def dump_text_file(self, output: str | None = None):
+        with _get_output_file(output) as file:
+            if self.per_total:
+                print(self.per_total, file=file)
+            if self.per_cluster_type:
+                print("Per cluster type:", file=file)
+                print("=================", file=file)
+                print(file=file)
+                for cluster_type in sorted(self.per_cluster_type.keys()):
+                    print(self.per_cluster_type[cluster_type], file=file)
+            if self.per_cluster:
+                print("Per cluster:", file=file)
+                print("============", file=file)
+                print(file=file)
+                for cluster in sorted(self.per_cluster.keys()):
+                    print(self.per_cluster[cluster], file=file)
+
+
 def show_metrics(
     time_from: datetime,
     time_to: datetime,
@@ -280,29 +328,13 @@ def show_metrics(
             consumed_seconds = (intersect_end - intersect_start).total_seconds()
             jagg.aggregate(job, consumed_seconds)
 
-    with _get_output_file(output) as file:
-        if per_total:
-            report_total = jagg.report(lambda record: "total")
-            if report_total:
-                print(report_total["total"], file=file)
-        if per_cluster_type:
-            report_per_cluster_type = jagg.report(
-                lambda record: CLUSTER_TO_TYPE.get(record.cluster_name, "drac")
-            )
-            if report_per_cluster_type:
-                print("Per cluster type:", file=file)
-                print("=================", file=file)
-                print(file=file)
-                for cluster_type in sorted(report_per_cluster_type.keys()):
-                    print(report_per_cluster_type[cluster_type], file=file)
-        if per_cluster:
-            report_per_cluster = jagg.report(lambda record: record.cluster_name)
-            if report_per_cluster:
-                print("Per cluster:", file=file)
-                print("============", file=file)
-                print(file=file)
-                for cluster in sorted(report_per_cluster.keys()):
-                    print(report_per_cluster[cluster], file=file)
+    report = Report(
+        jagg,
+        per_total=per_total,
+        per_cluster_type=per_cluster_type,
+        per_cluster=per_cluster,
+    )
+    report.dump_text_file(output)
 
 
 def main():
