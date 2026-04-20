@@ -7,6 +7,7 @@ from typing import Any
 from tqdm import tqdm
 
 from sarc.alerts.common import CheckResult, HealthCheck
+from sarc.alerts.usage_alerts.old_running_jobs import check_old_running_jobs
 from sarc.client.job import SlurmJob
 from sarc.core.models.validators import datetime_utc
 
@@ -123,7 +124,7 @@ class RunningJobCheck(HealthCheck):
 
 
 def main():
-    check_running_jobs(since=datetime(2026, 1, 1, tzinfo=UTC))
+    check_old_running_jobs(since=datetime(2026, 1, 1, tzinfo=UTC))
 
 
 if __name__ == "__main__":
