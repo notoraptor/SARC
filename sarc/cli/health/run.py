@@ -40,6 +40,10 @@ class HealthRunCommand:
         action="store_true",
         help="Run all health checks. Mutually exclusive with --check",
     )
+    dry: bool = simple_parsing.field(
+        action="store_true",
+        help="Dry run. Do not save health checks results in database.",
+    )
 
     def execute(self) -> int:
         if self.config is None:
@@ -81,7 +85,8 @@ class HealthRunCommand:
             state = _get_state(name=name, hcfg=hcfg, repo=repo)
             assert state is not None
             # Save it in database anyway
-            repo.save(state)
+            if not self.dry:
+                repo.save(state)
             check = state.check
 
             # Skip inactive checks
@@ -116,7 +121,8 @@ class HealthRunCommand:
             # Update MongoDB state
             state.last_result = result
             state.last_message = message
-            repo.save(state)
+            if not self.dry:
+                repo.save(state)
 
         logger.info(
             f"Check complete: {checks_run} checks run, {checks_skipped} skipped"
