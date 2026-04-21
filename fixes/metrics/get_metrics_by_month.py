@@ -20,7 +20,8 @@ from collections.abc import Iterator
 from datetime import UTC, datetime
 from pathlib import Path
 
-from fixes.get_metrics import _default_output_path, show_metrics
+from fixes.metrics.core.show_metrics import show_metrics
+from fixes.metrics.get_metrics import _default_output_path
 
 logger = logging.getLogger("sarc-metrics-by-month")
 
