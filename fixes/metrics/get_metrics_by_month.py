@@ -20,8 +20,9 @@ from collections.abc import Iterator
 from datetime import UTC, datetime
 from pathlib import Path
 
+from fixes.metrics.core.report import TextOutputFile
 from fixes.metrics.core.show_metrics import show_metrics
-from fixes.metrics.get_metrics import _default_output_path
+from fixes.metrics.get_metrics import get_default_output_path
 
 logger = logging.getLogger("sarc-metrics-by-month")
 
@@ -84,7 +85,7 @@ def main() -> None:
         window_start = window_start_local.astimezone(UTC)
         window_end = window_end_local.astimezone(UTC)
 
-        filename = _default_output_path(window_start, window_end)
+        filename = get_default_output_path(window_start, window_end)
         path = output_dir / filename
 
         if path.exists() and path.stat().st_size > 0:
@@ -96,7 +97,7 @@ def main() -> None:
         logger.info(
             f"[generate] {path} for window {window_start.isoformat()} -> {window_end.isoformat()}"
         )
-        show_metrics(window_start, window_end, output=str(path))
+        show_metrics(window_start, window_end, output=TextOutputFile(path))
 
 
 if __name__ == "__main__":

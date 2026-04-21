@@ -1,6 +1,7 @@
 import contextlib
 import csv
 import sys
+from abc import ABC, abstractmethod
 from pathlib import Path
 
 from fixes.metrics.core.job_aggregation import JobAggregation
@@ -21,37 +22,41 @@ def _get_output_file(filename: str | Path | None = None):
             output.close()
 
 
-# Cluster to category (default: drac)
-CLUSTER_TO_TYPE = {
-    "mila": "mila",
-    "tamia": "drac-paice",
-    "killarney": "drac-paice",
-    "vulcan": "drac-paice",
-}
+def _write_csv(path: Path, rows: list[list]):
+    with open(path, "w", newline="") as f:
+        csv.writer(f).writerows(rows)
 
 
 class Report:
+    # Cluster to category (default: drac)
+    CLUSTER_TO_TYPE = {
+        "mila": "mila",
+        "tamia": "drac-paice",
+        "killarney": "drac-paice",
+        "vulcan": "drac-paice",
+    }
+
     __slots__ = ("per_total", "per_cluster_type", "per_cluster")
 
     def __init__(
         self,
         jagg: JobAggregation,
         *,
-        per_total: bool = False,
-        per_cluster_type: bool = False,
-        per_cluster: bool = False,
+        per_total: bool = True,
+        per_cluster_type: bool = True,
+        per_cluster: bool = True,
     ):
         self.per_total: ScopeMetrics | None = None
         self.per_cluster_type: dict[str, ScopeMetrics] | None = None
         self.per_cluster: dict[str, ScopeMetrics] | None = None
 
         if per_total:
-            report_total = jagg.report(lambda record: "total")
+            report_total = jagg.report(lambda _: "total")
             if report_total:
                 self.per_total = report_total["total"]
         if per_cluster_type:
             report_per_cluster_type = jagg.report(
-                lambda record: CLUSTER_TO_TYPE.get(record.cluster_name, "drac")
+                lambda record: self.CLUSTER_TO_TYPE.get(record.cluster_name, "drac")
             )
             if report_per_cluster_type:
                 self.per_cluster_type = report_per_cluster_type
@@ -60,7 +65,7 @@ class Report:
             if report_per_cluster:
                 self.per_cluster = report_per_cluster
 
-    def dump_text_file(self, output: str | None = None):
+    def dump_text(self, output: Path | str | None = None):
         with _get_output_file(output) as file:
             if self.per_total:
                 print(self.per_total, file=file)
@@ -77,8 +82,7 @@ class Report:
                 for cluster in sorted(self.per_cluster.keys()):
                     print(self.per_cluster[cluster], file=file)
 
-    def dump_multi_csv(self, folder: Path):
-        # NB: Not yet used
+    def dump_multi_csv_files(self, folder: Path):
         scope_type_metrics: list[tuple[str, str, ScopeMetrics]] = []
         if self.per_total:
             scope_type_metrics.append(("total", "total", self.per_total))
@@ -126,6 +130,34 @@ class Report:
             _write_csv(folder / f"user-to-rgu-{csv_user_name}.csv", csv_user_content)
 
 
-def _write_csv(path: Path, rows: list[list]):
-    with open(path, "w", newline="") as f:
-        csv.writer(f).writerows(rows)
+class ReportOutput(ABC):
+    __slots__ = ("path",)
+
+    def __init__(self, path: Path | str | None):
+        self.path: Path | None = (
+            None if path is None else (path if isinstance(path, Path) else Path(path))
+        )
+
+    @abstractmethod
+    def dump(self, report: Report):
+        raise NotImplementedError()
+
+
+class TextOutputFile(ReportOutput):
+    __slots__ = ()
+
+    def dump(self, report: Report):
+        report.dump_text(self.path)
+
+
+class CsvOutputFolder(ReportOutput):
+    __slots__ = ()
+
+    def __init__(self, path: Path | str):
+        super().__init__(path)
+        assert self.path is not None
+        self.path.mkdir(parents=True, exist_ok=True)
+
+    def dump(self, report: Report):
+        assert self.path is not None
+        report.dump_multi_csv_files(self.path)

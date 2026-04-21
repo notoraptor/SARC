@@ -4,13 +4,15 @@ from datetime import datetime, timedelta
 from tqdm import tqdm
 
 from fixes.metrics.core.job_aggregation import JobAggregation
-from fixes.metrics.core.report import Report
+from fixes.metrics.core.report import Report, ReportOutput, TextOutputFile
 from sarc.client.job import _jobs_collection
 
 logger = logging.getLogger("sarc-metrics")
 
 
-def show_metrics(time_from: datetime, time_to: datetime, *, output: str | None = None):
+def show_metrics(
+    time_from: datetime, time_to: datetime, *, output: ReportOutput | None = None
+):
     jagg = JobAggregation(time_from, time_to)
     coll_jobs = _jobs_collection()
 
@@ -78,4 +80,5 @@ def show_metrics(time_from: datetime, time_to: datetime, *, output: str | None =
             jagg.aggregate(job, consumed_seconds)
 
     report = Report(jagg)
-    report.dump_text_file(output)
+    output = output or TextOutputFile(None)
+    output.dump(report)
