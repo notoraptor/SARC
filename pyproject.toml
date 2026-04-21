@@ -101,6 +101,7 @@ ignore = [
 "examples/**" = ["T20"]
 "docs/**" = ["T20"]
 "scripts/**" = ["T201"]
+"fixes/**" = ["T20"]
 
 
 [tool.uv]

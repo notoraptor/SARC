@@ -23,7 +23,7 @@ def main():
 
         key_requeued = SlurmState.REQUEUED.name
         for cluster_name, cluster_epoch in classifier.items():
-            for epoch, job_indices in cluster_epoch.items():
+            for job_indices in cluster_epoch.values():
                 for job_id, submit_times in job_indices.items():
                     if len(submit_times) > 1:
                         # Many submit times for a same couple (cluster_name, job_id) in an epoch
