@@ -1,0 +1,9 @@
+extend = "../pyproject.toml"
+
+# Required: from a nested ruff.toml, ruff does not re-detect the project root
+# for isort, so first-party packages must be declared explicitly.
+[lint.isort]
+known-first-party = ["sarc", "fixes"]
+
+[lint.per-file-ignores]
+"**/*.py" = ["T20"]
