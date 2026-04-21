@@ -23,7 +23,7 @@ def _get_output_file(filename: str | Path | None = None):
 
 
 def _write_csv(path: Path, rows: list[list]):
-    with open(path, "w", newline="") as f:
+    with open(path, "w", newline="", encoding="utf-8") as f:
         csv.writer(f).writerows(rows)
 
 
@@ -99,8 +99,8 @@ class Report:
 
         csv_metrics: list[list] = [
             [
-                "start",
-                "end",
+                "time_from",
+                "time_to",
                 "scope_type",
                 "scope_name",
                 "nb_unique_users",
@@ -111,7 +111,7 @@ class Report:
             ]
         ]
         csv_users: list[list] = [
-            ["start", "end", "scope_type", "scope_name", "user", "rgu_sec"]
+            ["time_from", "time_to", "scope_type", "scope_name", "user", "rgu_sec"]
         ]
         for scope, name, metrics in scope_type_metrics:
             csv_metrics.append(
