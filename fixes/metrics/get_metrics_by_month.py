@@ -57,19 +57,6 @@ def main() -> None:
     parser.add_argument(
         "-O", "--output-dir", type=str, required=True, help="Directory for reports"
     )
-    parser.add_argument("-a", "--all", action="store_true", help="Show all metrics")
-    parser.add_argument(
-        "-t", "--total", action="store_true", help="Show metrics for total"
-    )
-    parser.add_argument(
-        "-d",
-        "--cluster-type",
-        action="store_true",
-        help="Show metrics per cluster type",
-    )
-    parser.add_argument(
-        "-c", "--cluster", action="store_true", help="Show metrics per cluster"
-    )
 
     args = parser.parse_args()
 
@@ -87,16 +74,6 @@ def main() -> None:
         )
         sys.exit(1)
 
-    per_total = args.all or args.total
-    per_cluster_type = args.all or args.cluster_type
-    per_cluster = args.all or args.cluster
-
-    if not per_total and not per_cluster_type and not per_cluster:
-        print(
-            "No metrics required, nothing to do. Pass either --all, --total, --cluster-type or --cluster."
-        )
-        sys.exit(1)
-
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -107,9 +84,7 @@ def main() -> None:
         window_start = window_start_local.astimezone(UTC)
         window_end = window_end_local.astimezone(UTC)
 
-        filename = _default_output_path(
-            window_start, window_end, per_total, per_cluster_type, per_cluster
-        )
+        filename = _default_output_path(window_start, window_end)
         path = output_dir / filename
 
         if path.exists() and path.stat().st_size > 0:
@@ -121,14 +96,7 @@ def main() -> None:
         logger.info(
             f"[generate] {path} for window {window_start.isoformat()} -> {window_end.isoformat()}"
         )
-        show_metrics(
-            window_start,
-            window_end,
-            per_total=per_total,
-            per_cluster_type=per_cluster_type,
-            per_cluster=per_cluster,
-            output=str(path),
-        )
+        show_metrics(window_start, window_end, output=str(path))
 
 
 if __name__ == "__main__":

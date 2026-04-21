@@ -10,15 +10,7 @@ from sarc.client.job import _jobs_collection
 logger = logging.getLogger("sarc-metrics")
 
 
-def show_metrics(
-    time_from: datetime,
-    time_to: datetime,
-    *,
-    per_total=True,
-    per_cluster_type=True,
-    per_cluster=True,
-    output: str | None = None,
-):
+def show_metrics(time_from: datetime, time_to: datetime, *, output: str | None = None):
     jagg = JobAggregation(time_from, time_to)
     coll_jobs = _jobs_collection()
 
@@ -85,10 +77,5 @@ def show_metrics(
             consumed_seconds = (intersect_end - intersect_start).total_seconds()
             jagg.aggregate(job, consumed_seconds)
 
-    report = Report(
-        jagg,
-        per_total=per_total,
-        per_cluster_type=per_cluster_type,
-        per_cluster=per_cluster,
-    )
+    report = Report(jagg)
     report.dump_text_file(output)
