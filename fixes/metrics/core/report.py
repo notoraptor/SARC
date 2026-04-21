@@ -99,6 +99,8 @@ class Report:
 
         csv_metrics: list[list] = [
             [
+                "start",
+                "end",
                 "scope_type",
                 "scope_name",
                 "nb_unique_users",
@@ -108,10 +110,14 @@ class Report:
                 "rgu_sec_per_unique_user",
             ]
         ]
-        csvs_users: dict[str, list[list]] = {}
+        csv_users: list[list] = [
+            ["start", "end", "scope_type", "scope_name", "user", "rgu_sec"]
+        ]
         for scope, name, metrics in scope_type_metrics:
             csv_metrics.append(
                 [
+                    metrics.time_from.isoformat(),
+                    metrics.time_to.isoformat(),
                     scope,
                     name,
                     metrics.nb_unique_users,
@@ -121,17 +127,23 @@ class Report:
                     metrics.rgu_sec_per_unique_user,
                 ]
             )
-            csvs_users[f"{scope}-{name}"] = [["user", "rgu_sec"]] + [
-                [user, rgu_sec]
+            csv_users.extend(
+                [
+                    metrics.time_from.isoformat(),
+                    metrics.time_to.isoformat(),
+                    scope,
+                    name,
+                    user,
+                    rgu_sec,
+                ]
                 for user, rgu_sec in sorted(
                     metrics.unique_user_to_rgu_sec.items(),
                     key=lambda item: (-item[1], item[0]),
                 )
-            ]
+            )
 
         _write_csv(folder / "metrics.csv", csv_metrics)
-        for csv_user_name, csv_user_content in csvs_users.items():
-            _write_csv(folder / f"user-to-rgu-{csv_user_name}.csv", csv_user_content)
+        _write_csv(folder / "user-to-rgu.csv", csv_users)
 
 
 class ReportOutput(ABC):

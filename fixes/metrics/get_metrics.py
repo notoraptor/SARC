@@ -42,8 +42,6 @@ FORMAT_CHOICES = (FORMAT_TEXT, FORMAT_CSV)
 
 
 def main() -> None:
-    logging.basicConfig(level=logging.INFO, force=True)
-
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
@@ -54,6 +52,11 @@ def main() -> None:
     )
     parser.add_argument(
         "--format", choices=FORMAT_CHOICES, default=FORMAT_TEXT, help="Output format"
+    )
+    parser.add_argument(
+        "--log-file",
+        type=str,
+        help="Write all INFO/DEBUG logs to this file (console stays at WARNING).",
     )
 
     output_group = parser.add_mutually_exclusive_group(required=True)
@@ -75,6 +78,7 @@ def main() -> None:
     )
 
     args = parser.parse_args()
+    _setup_logging(args.log_file)
 
     time_from = datetime.fromisoformat(args.start).astimezone()
     time_to = datetime.fromisoformat(args.end).astimezone()
@@ -117,6 +121,26 @@ def main() -> None:
             output.path if output.path is not None else "stdout",
         )
         show_metrics(window_start, window_end, output=output)
+
+
+def _setup_logging(log_file: str | None) -> None:
+    root = logging.getLogger()
+    # Root captures everything; handlers filter at their own level.
+    root.setLevel(logging.DEBUG)
+    root.handlers.clear()
+
+    console = logging.StreamHandler()
+    console.setLevel(logging.WARNING)
+    console.setFormatter(logging.Formatter("%(levelname)s %(name)s: %(message)s"))
+    root.addHandler(console)
+
+    if log_file:
+        fh = logging.FileHandler(log_file, mode="w", encoding="utf-8")
+        fh.setLevel(logging.DEBUG)
+        fh.setFormatter(
+            logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s")
+        )
+        root.addHandler(fh)
 
 
 def _resolve_base_path(
