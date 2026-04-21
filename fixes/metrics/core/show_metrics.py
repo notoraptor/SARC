@@ -5,6 +5,7 @@ from tqdm import tqdm
 
 from fixes.metrics.core.job_aggregation import JobAggregation
 from fixes.metrics.core.report import Report, ReportOutput, TextOutputFile
+from fixes.metrics.core.utils import expect_datetime_utc
 from sarc.client.job import _jobs_collection
 
 logger = logging.getLogger(__name__)
@@ -13,6 +14,9 @@ logger = logging.getLogger(__name__)
 def show_metrics(
     time_from: datetime, time_to: datetime, *, output: ReportOutput | None = None
 ):
+    expect_datetime_utc(time_from)
+    expect_datetime_utc(time_to)
+
     jagg = JobAggregation(time_from, time_to)
     coll_jobs = _jobs_collection()
 

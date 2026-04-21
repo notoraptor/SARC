@@ -3,23 +3,23 @@ Generate RGU*seconds metrics over a time range.
 
 Examples:
     # single window, text to stdout
-    uv run fixes/metrics/get_metrics.py --start 2026-04-07T00:00 --end 2026-04-07T17:35 --output-stdout
+    uv run fixes/metrics/get_metrics.py --start 2026-04-07T00:00Z --end 2026-04-07T17:35Z --output-stdout
 
     # single window, text to a file
-    uv run fixes/metrics/get_metrics.py --start 2026-04-07 --end 2026-04-08 --format text --output report.txt
+    uv run fixes/metrics/get_metrics.py --start 2026-04-07T00:00Z --end 2026-04-08T00:00Z --format text --output report.txt
 
     # single window, CSVs in a folder
-    uv run fixes/metrics/get_metrics.py --start 2026-04-07 --end 2026-04-08 --format csv --output report-dir/
+    uv run fixes/metrics/get_metrics.py --start 2026-04-07T00:00Z --end 2026-04-08T00:00Z --format csv --output report-dir/
 
     # split by month, one text file per month in reports/
-    uv run fixes/metrics/get_metrics.py --start 2026-01-01 --end 2026-04-15 --split-by month --output reports/
+    uv run fixes/metrics/get_metrics.py --start 2026-01-01T00:00Z --end 2026-04-15T00:00Z --split-by month --output reports/
 
-    # split by month, one CSV subfolder per month in reports/
-    uv run fixes/metrics/get_metrics.py --start 2026-01-01 --end 2026-04-15 --split-by month --format csv --output reports/
+    # split by week (Monday-aligned), one CSV subfolder per week in reports/
+    uv run fixes/metrics/get_metrics.py --start 2026-01-05T00:00Z --end 2026-02-02T00:00Z --split-by week --format csv --output reports/
 
-Naive input datetimes are interpreted in the local timezone; explicit offsets
-(e.g. "2026-04-01T00:00Z") are honored. Month boundaries (with --split-by month)
-use the input timezone so "April" means local April, not UTC April.
+Inputs must be UTC-aware ISO strings (naive datetimes are rejected). Split
+boundaries are anchored on UTC midnight of the 1st of each month or on UTC
+Monday 00:00 for weeks.
 
 Previously-generated outputs that already exist and are non-empty are skipped.
 """
@@ -27,11 +27,12 @@ Previously-generated outputs that already exist and are non-empty are skipped.
 import argparse
 import logging
 import sys
-from datetime import UTC, datetime
+from datetime import datetime
 from pathlib import Path
 
 from fixes.metrics.core.report import CsvOutputFolder, ReportOutput, TextOutputFile
 from fixes.metrics.core.show_metrics import show_metrics
+from fixes.metrics.core.utils import expect_datetime_utc
 from fixes.metrics.core.windows import SPLIT_CHOICES, SPLIT_NONE, iter_windows
 
 logger = logging.getLogger(__name__)
@@ -45,8 +46,8 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
-    parser.add_argument("-s", "--start", type=str, required=True)
-    parser.add_argument("-e", "--end", type=str, required=True)
+    parser.add_argument("-s", "--start", required=True, help="UTC, ISO format.")
+    parser.add_argument("-e", "--end", required=True, help="UTC, ISO format.")
     parser.add_argument(
         "--split-by", choices=SPLIT_CHOICES, default=SPLIT_NONE, help="Window split"
     )
@@ -55,7 +56,6 @@ def main() -> None:
     )
     parser.add_argument(
         "--log-file",
-        type=str,
         help="Write all INFO/DEBUG logs to this file (console stays at WARNING).",
     )
 
@@ -63,7 +63,6 @@ def main() -> None:
     output_group.add_argument(
         "-o",
         "--output",
-        type=str,
         help="Output path. A file for (text, split=none); a directory otherwise.",
     )
     output_group.add_argument(
@@ -80,8 +79,8 @@ def main() -> None:
     args = parser.parse_args()
     _setup_logging(args.log_file)
 
-    time_from = datetime.fromisoformat(args.start).astimezone()
-    time_to = datetime.fromisoformat(args.end).astimezone()
+    time_from = _parse_dt(args.start)
+    time_to = _parse_dt(args.end)
 
     if time_from > time_to:
         print("Expected time_from <= time_to", time_from, time_to, file=sys.stderr)
@@ -97,12 +96,7 @@ def main() -> None:
         args, time_from, time_to, fmt=args.format, is_split=is_split
     )
 
-    for window_start_local, window_end_local in iter_windows(
-        time_from, time_to, args.split_by
-    ):
-        window_start = window_start_local.astimezone(UTC)
-        window_end = window_end_local.astimezone(UTC)
-
+    for window_start, window_end in iter_windows(time_from, time_to, args.split_by):
         output = _build_output(
             base_path=base_path,
             fmt=args.format,
@@ -121,6 +115,13 @@ def main() -> None:
             output.path if output.path is not None else "stdout",
         )
         show_metrics(window_start, window_end, output=output)
+
+
+def _parse_dt(s: str) -> datetime:
+    """Parse an ISO datetime string. Raises if not explicitly UTC."""
+    dt = datetime.fromisoformat(s)
+    expect_datetime_utc(dt)
+    return dt
 
 
 def _setup_logging(log_file: str | None) -> None:
