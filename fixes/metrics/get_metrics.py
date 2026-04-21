@@ -34,7 +34,7 @@ from fixes.metrics.core.report import CsvOutputFolder, ReportOutput, TextOutputF
 from fixes.metrics.core.show_metrics import show_metrics
 from fixes.metrics.core.windows import SPLIT_CHOICES, SPLIT_NONE, iter_windows
 
-logger = logging.getLogger("sarc-metrics")
+logger = logging.getLogger(__name__)
 
 FORMAT_TEXT = "text"
 FORMAT_CSV = "csv"
@@ -108,7 +108,7 @@ def main() -> None:
         )
 
         if is_split and output.is_present():
-            logger.info("[skip] %s already exists and is non-empty.", output.path)
+            logger.warning("[skip] %s already exists and is non-empty.", output.path)
             continue
 
         logger.info(

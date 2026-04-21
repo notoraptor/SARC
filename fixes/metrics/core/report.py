@@ -87,10 +87,14 @@ class Report:
         if self.per_total:
             scope_type_metrics.append(("total", "total", self.per_total))
         if self.per_cluster_type:
-            for cluster_type, metrics in self.per_cluster_type.items():
+            for cluster_type, metrics in sorted(
+                self.per_cluster_type.items(), key=lambda item: item[0]
+            ):
                 scope_type_metrics.append(("domain", cluster_type, metrics))
         if self.per_cluster:
-            for cluster_name, metrics in self.per_cluster.items():
+            for cluster_name, metrics in sorted(
+                self.per_cluster.items(), key=lambda item: item[0]
+            ):
                 scope_type_metrics.append(("cluster", cluster_name, metrics))
 
         csv_metrics: list[list] = [

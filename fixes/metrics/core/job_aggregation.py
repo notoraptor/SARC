@@ -64,7 +64,7 @@ class JobAggregation:
         if gpu_type not in self._gpu_type_to_rgu:
             h_gpu_type = self._harmonize_gpu(job)
             if h_gpu_type is not None:
-                logger.warning(
+                logger.info(
                     f"had to manually harmonize GPU type for job "
                     f"{job.cluster_name}/{job.job_id}: {gpu_type} -> {h_gpu_type}"
                 )

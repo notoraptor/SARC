@@ -7,7 +7,7 @@ from fixes.metrics.core.job_aggregation import JobAggregation
 from fixes.metrics.core.report import Report, ReportOutput, TextOutputFile
 from sarc.client.job import _jobs_collection
 
-logger = logging.getLogger("sarc-metrics")
+logger = logging.getLogger(__name__)
 
 
 def show_metrics(
