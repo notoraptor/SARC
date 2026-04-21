@@ -142,12 +142,24 @@ class ReportOutput(ABC):
     def dump(self, report: Report):
         raise NotImplementedError()
 
+    @abstractmethod
+    def is_present(self) -> bool:
+        """True if an artifact already exists at self.path (used to skip in split mode)."""
+        raise NotImplementedError()
+
 
 class TextOutputFile(ReportOutput):
     __slots__ = ()
 
     def dump(self, report: Report):
         report.dump_text(self.path)
+
+    def is_present(self) -> bool:
+        return (
+            self.path is not None
+            and self.path.exists()
+            and self.path.stat().st_size > 0
+        )
 
 
 class CsvOutputFolder(ReportOutput):
@@ -156,8 +168,12 @@ class CsvOutputFolder(ReportOutput):
     def __init__(self, path: Path | str):
         super().__init__(path)
         assert self.path is not None
-        self.path.mkdir(parents=True, exist_ok=True)
 
     def dump(self, report: Report):
         assert self.path is not None
+        self.path.mkdir(parents=True, exist_ok=True)
         report.dump_multi_csv_files(self.path)
+
+    def is_present(self) -> bool:
+        assert self.path is not None
+        return self.path.exists() and any(self.path.iterdir())
