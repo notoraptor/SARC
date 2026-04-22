@@ -56,7 +56,7 @@ def main() -> None:
     )
     parser.add_argument(
         "--log-file",
-        help="Write all INFO/DEBUG logs to this file (console stays at WARNING).",
+        help="Write all INFO logs to this file (console stays at WARNING).",
     )
 
     output_group = parser.add_mutually_exclusive_group(required=True)
@@ -125,19 +125,22 @@ def _parse_dt(s: str) -> datetime:
 
 
 def _setup_logging(log_file: str | None) -> None:
+    base_level = logging.INFO
+    public_level = logging.WARNING
+
     root = logging.getLogger()
     # Root captures everything; handlers filter at their own level.
-    root.setLevel(logging.DEBUG)
+    root.setLevel(base_level)
     root.handlers.clear()
 
     console = logging.StreamHandler()
-    console.setLevel(logging.WARNING)
+    console.setLevel(public_level)
     console.setFormatter(logging.Formatter("%(levelname)s %(name)s: %(message)s"))
     root.addHandler(console)
 
     if log_file:
         fh = logging.FileHandler(log_file, mode="w", encoding="utf-8")
-        fh.setLevel(logging.DEBUG)
+        fh.setLevel(base_level)
         fh.setFormatter(
             logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s")
         )

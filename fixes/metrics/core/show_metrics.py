@@ -60,10 +60,18 @@ def show_metrics(
             if job_end < time_from:
                 # Maybe an old running job.
                 logger.debug(
-                    f"Job {job.cluster_name}/{job.job_id}/{job.job_state.name} "
-                    f"ends before time frame ({time_from} .. {time_to}): "
-                    f"submit {job.submit_time}, start {job.start_time}, end {job.end_time}, "
-                    f"elapsed {job.elapsed_time}, used end: {job_end}. Skipping"
+                    "Job %s/%s/%s ends before time frame (%s .. %s): "
+                    "submit %s, start %s, end %s, elapsed %s, used end: %s. Skipping",
+                    job.cluster_name,
+                    job.job_id,
+                    job.job_state.name,
+                    time_from,
+                    time_to,
+                    job.submit_time,
+                    job.start_time,
+                    job.end_time,
+                    job.elapsed_time,
+                    job_end,
                 )
                 continue
 
