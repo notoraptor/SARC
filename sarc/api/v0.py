@@ -21,7 +21,7 @@ from sarc.client.job import (
 )
 from sarc.config import UTC, Config, config
 from sarc.core.models import validators
-from sarc.core.models.api import SlurmJobList, UserList
+from sarc.core.models.api import Cursor, SlurmJobList, SlurmJobListByCursor, UserList
 from sarc.core.models.users import MemberType, UserData
 from sarc.users.db import UserDB, get_user_collection
 
@@ -314,7 +314,6 @@ def list_jobs(
     per_page = constrain_page_parameters(cfg, page, per_page)
     coll = _jobs_collection()
     query = query_opt.get_query()
-    total = coll.get_collection().count_documents(query)
 
     cursor = (
         coll.get_collection()
@@ -328,7 +327,54 @@ def list_jobs(
         jobs=[SlurmJob.model_validate(doc) for doc in cursor],
         page=page,
         per_page=per_page,
-        total=total,
+    )
+
+
+@router.get("/job/list_by_cursor")
+def list_jobs_by_cursor(
+    query_opt: JobQueryType,
+    after_submit_time: datetime_api | None = None,
+    after_id: PydanticObjectId | None = None,
+    per_page: int | None = None,
+    cfg: Config = Depends(config_dep),
+) -> SlurmJobListByCursor:
+    if (after_submit_time is None) != (after_id is None):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="after_submit_time and after_id must be both set or both unset",
+        )
+
+    per_page = constrain_page_parameters(cfg, page=1, per_page=per_page)
+    coll = _jobs_collection()
+    query = query_opt.get_query()
+
+    if after_submit_time is not None:
+        cursor_clause = {
+            "$or": [
+                {"submit_time": {"$lt": after_submit_time}},
+                {"submit_time": after_submit_time, "_id": {"$gt": after_id}},
+            ]
+        }
+        query = {"$and": [query, cursor_clause]} if query else cursor_clause
+
+    docs = list(
+        coll.get_collection()
+        .find(query, allow_disk_use=True)
+        .sort([("submit_time", -1), ("_id", 1)])
+        .limit(per_page)
+    )
+
+    next_cursor: Cursor | None = None
+    if len(docs) == per_page:
+        last = docs[-1]
+        next_cursor = Cursor(
+            after_submit_time=last["submit_time"], after_id=last["_id"]
+        )
+
+    return SlurmJobListByCursor(
+        jobs=[SlurmJob.model_validate(d) for d in docs],
+        per_page=per_page,
+        next_cursor=next_cursor,
     )
 
 
@@ -379,7 +425,6 @@ def list_users(
     per_page = constrain_page_parameters(cfg, page, per_page)
     coll = get_user_collection()
     query = query_opt.get_query()
-    total = coll.get_collection().count_documents(query)
 
     cursor = (
         coll.get_collection()
@@ -393,7 +438,6 @@ def list_users(
         users=[UserData.model_validate(doc) for doc in cursor],
         page=page,
         per_page=per_page,
-        total=total,
     )
 
 

@@ -36,7 +36,7 @@ from pydantic_mongo import PydanticObjectId
 from sarc.client.job import SlurmJob, SlurmState
 from sarc.client.series import AbstractJobSeriesFactory
 from sarc.config import UTC, ConfigurationError, config
-from sarc.core.models.api import SlurmJobList, UserList
+from sarc.core.models.api import Cursor, SlurmJobList, SlurmJobListByCursor, UserList
 from sarc.core.models.users import MemberType, UserData
 from sarc.traces import trace_decorator
 
@@ -84,7 +84,8 @@ class SarcApiClient:
         if per_page is None:
             per_page = api_cfg.per_page
 
-        assert oauth2_token is not None
+        if oauth2_token is None:
+            oauth2_token = api_cfg.oauth2_token
 
         # Ensure no trailing slash for consistency
         self.remote_url = remote_url.rstrip("/")
@@ -176,6 +177,37 @@ class SarcApiClient:
         }
         response = self._get("/v0/job/list", params=params)
         return SlurmJobList.model_validate(response.json())
+
+    def job_list_by_cursor(
+        self,
+        cluster: str | None = None,
+        job_id: int | list[int] | None = None,
+        job_state: SlurmState | None = None,
+        username: str | None = None,
+        start: datetime | None = None,
+        end: datetime | None = None,
+        after_submit_time: datetime | None = None,
+        after_id: str | PydanticObjectId | None = None,
+        per_page: int | None = None,
+    ) -> SlurmJobListByCursor:
+        """
+        Query jobs with keyset pagination.
+        Pass the `next_cursor` from the previous response as
+        `after_submit_time` and `after_id` to retrieve the next page.
+        """
+        params = {
+            "cluster": cluster,
+            "job_id": job_id,
+            "job_state": job_state.value if job_state else None,
+            "username": username,
+            "start": start,
+            "end": end,
+            "after_submit_time": after_submit_time,
+            "after_id": str(after_id) if after_id is not None else None,
+            "per_page": per_page if per_page is not None else self.per_page,
+        }
+        response = self._get("/v0/job/list_by_cursor", params=params)
+        return SlurmJobListByCursor.model_validate(response.json())
 
     def job_count(
         self,
@@ -441,7 +473,6 @@ def get_jobs(
             job_id, job_state, start, end
         )
 
-        nb_all_jobs = 0
         page = 1
 
         try:
@@ -460,13 +491,7 @@ def get_jobs(
                 for job in job_list_resp.jobs:
                     yield job
 
-                nb_all_jobs += len(job_list_resp.jobs)
-
-                # Check if we have fetched everything
-                if nb_all_jobs >= job_list_resp.total:
-                    break
-
-                # Or if the current page returned fewer than per_page (last page)
+                # Check if the current page returned fewer than per_page (last page)
                 if len(job_list_resp.jobs) < job_list_resp.per_page:
                     break
 
@@ -475,6 +500,64 @@ def get_jobs(
         except httpx.HTTPStatusError as exc:
             if exc.response.status_code != 404:
                 raise exc
+
+
+
+def get_jobs_by_cursor(
+    *,
+    cluster: str | None = None,
+    job_id: int | list[int] | None = None,
+    job_state: str | SlurmState | None = None,
+    user: str | None = None,
+    start: str | datetime | None = None,
+    end: str | datetime | None = None,
+) -> Iterable[SlurmJob]:
+    """
+    Get jobs matching the criteria using the REST API.
+    Fetches all results by iterating over pages.
+
+    Same signature as in `sarc.client.job.get_jobs`,
+    except parameter `query_options` which is specific to MongoDB,
+    """
+    # Use a single httpx client for all calls.
+    with httpx.Client() as session:
+        client = SarcApiClient(session=session)
+
+        per_page = client.per_page
+
+        job_id, job_state, start, end = _parse_common_args(
+            job_id, job_state, start, end
+        )
+
+        cursor: Cursor | None = None
+
+        try:
+            while True:
+                job_list_resp = client.job_list_by_cursor(
+                    cluster=cluster,
+                    job_id=job_id,  # type: ignore
+                    job_state=job_state,  # type: ignore
+                    username=user,
+                    start=start,
+                    end=end,
+                    after_submit_time=(
+                        cursor.after_submit_time if cursor is not None else None
+                    ),
+                    after_id=cursor.after_id if cursor is not None else None,
+                    per_page=per_page,
+                )
+
+                for job in job_list_resp.jobs:
+                    yield job
+
+                if job_list_resp.next_cursor is None:
+                    break
+                cursor = job_list_resp.next_cursor
+
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code != 404:
+                raise exc
+
 
 
 def get_rgus(rgu_version: str = "1.0") -> dict[str, float]:
@@ -534,9 +617,6 @@ def get_users(
             )
 
             all_users.extend(user_list_resp.users)
-
-            if len(all_users) >= user_list_resp.total:
-                break
 
             if len(user_list_resp.users) < user_list_resp.per_page:
                 break

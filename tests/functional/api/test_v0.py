@@ -200,7 +200,6 @@ def test_list_jobs_no_filters(client):
     response = client.get("/v0/job/list", expect_status=200)
 
     data = response.json()
-    assert data["total"] == 24
     assert len(data["jobs"]) == 24
     assert data["page"] == 1
     assert data["per_page"] == 100
@@ -212,7 +211,6 @@ def test_list_jobs_pagination(client):
     # Page 1, 5 items
     response = client.get("/v0/job/list?page=1&per_page=5", expect_status=200)
     data = response.json()
-    assert data["total"] == 24
     assert len(data["jobs"]) == 5
     assert data["page"] == 1
     assert data["per_page"] == 5
@@ -238,6 +236,77 @@ def test_list_jobs_invalid_pagination(client):
     # Per page > MAX
     client.get(
         f"/v0/job/list?per_page={config().api.max_page_size + 1}", expect_status=400
+    )
+
+
+@pytest.mark.usefixtures("read_only_db_with_users")
+def test_list_jobs_by_cursor(client):
+    """Iterate the raisin cluster (20 jobs) via keyset pagination, per_page=5."""
+    seen: list[dict] = []
+    after_submit_time: str | None = None
+    after_id: str | None = None
+
+    for _ in range(5):
+        params = {"cluster": "raisin", "per_page": 5}
+        if after_submit_time is not None:
+            params["after_submit_time"] = after_submit_time
+            params["after_id"] = after_id
+        qs = "&".join(f"{k}={v}" for k, v in params.items())
+        response = client.get(f"/v0/job/list_by_cursor?{qs}", expect_status=200)
+        data = response.json()
+        seen.extend(data["jobs"])
+        if data["next_cursor"] is None:
+            break
+        after_submit_time = data["next_cursor"]["after_submit_time"]
+        after_id = data["next_cursor"]["after_id"]
+
+    # 20 jobs total; distinct on (job_id, submit_time) since job_id alone
+    # is NOT unique (rescheduled jobs share job_id with different submit_time/_id).
+    assert len(seen) == 20
+    assert len({(j["job_id"], j["submit_time"]) for j in seen}) == 20
+    assert data["next_cursor"] is None
+
+
+@pytest.mark.usefixtures("read_only_db")
+def test_list_jobs_by_cursor_matches_offset_order(client):
+    """Keyset pagination must return the same order as offset pagination."""
+    resp = client.get("/v0/job/list?per_page=100", expect_status=200)
+    expected_ids = [j["job_id"] for j in resp.json()["jobs"]]
+
+    got_ids: list[int] = []
+    params = "per_page=5"
+    while True:
+        resp = client.get(f"/v0/job/list_by_cursor?{params}", expect_status=200)
+        data = resp.json()
+        got_ids.extend(j["job_id"] for j in data["jobs"])
+        if data["next_cursor"] is None:
+            break
+        cur = data["next_cursor"]
+        params = (
+            f"per_page=5&after_submit_time={cur['after_submit_time']}"
+            f"&after_id={cur['after_id']}"
+        )
+
+    assert got_ids == expected_ids
+
+
+@pytest.mark.usefixtures("read_only_db")
+def test_list_jobs_by_cursor_invalid_params(client):
+    """after_submit_time and after_id must be both set or both unset."""
+    # Only after_submit_time
+    client.get(
+        "/v0/job/list_by_cursor?after_submit_time=2026-01-01T00:00:00%2B00:00",
+        expect_status=400,
+    )
+    # Only after_id
+    client.get(
+        "/v0/job/list_by_cursor?after_id=65abc123def4567890123456", expect_status=400
+    )
+    # Invalid per_page
+    client.get("/v0/job/list_by_cursor?per_page=0", expect_status=400)
+    client.get(
+        f"/v0/job/list_by_cursor?per_page={config().api.max_page_size + 1}",
+        expect_status=400,
     )
 
 
@@ -694,7 +763,6 @@ def test_user_list(client):
     response = client.get("/v0/user/list", expect_status=200)
     data = response.json()
     assert data["page"] == 1
-    assert data["total"] == 10
     assert len(data["users"]) == 10
 
     # Check sorting: email asc
@@ -705,7 +773,6 @@ def test_user_list(client):
     response = client.get("/v0/user/list?per_page=3", expect_status=200)
     data = response.json()
     assert len(data["users"]) == 3
-    assert data["total"] == 10
 
     # Test page 2
     response = client.get("/v0/user/list?page=2&per_page=3", expect_status=200)
@@ -731,7 +798,6 @@ def test_user_list(client):
     # Test filtering with list endpoint
     response = client.get("/v0/user/list?display_name=janE", expect_status=200)
     data = response.json()
-    assert data["total"] == 1
     assert len(data["users"]) == 1
     assert data["users"][0]["display_name"] == "Jane Doe"
 
