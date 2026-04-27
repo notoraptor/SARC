@@ -511,6 +511,7 @@ def test_user_list(sarc_client):
     # Default page 1
     data = sarc_client.user_list()
     assert data.page == 1
+    assert data.total == 10
     assert len(data.users) == 10
     assert data.per_page == config().api.per_page
 
@@ -521,10 +522,12 @@ def test_user_list(sarc_client):
     # Page 2
     data = sarc_client.user_list(page=2)
     assert data.page == 2
+    assert data.total == 10
     assert len(data.users) == 0
 
     # Test filtering with list endpoint
     data = sarc_client.user_list(display_name="janE")
+    assert data.total == 1
     assert len(data.users) == 1
     assert data.users[0].display_name == "Jane Doe"
 
@@ -534,6 +537,7 @@ def test_user_list_per_page_3(sarc_client):
     prev_users = []
     for page in range(1, 4):
         users_list = sarc_client.user_list(page=page, per_page=3)
+        assert users_list.total == 10
         assert users_list.per_page == 3
         assert len(users_list.users) == 3
         assert users_list.page == page
@@ -541,6 +545,7 @@ def test_user_list_per_page_3(sarc_client):
         prev_users = users_list.users
 
     users_list = sarc_client.user_list(page=4, per_page=3)
+    assert users_list.total == 10
     assert users_list.per_page == 3
     assert len(users_list.users) == 1
     assert users_list.page == 4
@@ -548,6 +553,7 @@ def test_user_list_per_page_3(sarc_client):
 
     for page in range(5, 10):
         users_list = sarc_client.user_list(page=page, per_page=3)
+        assert users_list.total == 10
         assert users_list.per_page == 3
         assert len(users_list.users) == 0
         assert users_list.page == page
@@ -557,6 +563,7 @@ def test_user_list_per_page_3(sarc_client):
 def test_job_list_no_filters(sarc_client):
     jobs_list = sarc_client.job_list()
     assert jobs_list.page == 1
+    assert jobs_list.total == 24
     assert len(jobs_list.jobs) == 24
     assert jobs_list.per_page == config().api.per_page
 
@@ -567,6 +574,7 @@ def test_job_list(sarc_client):
     prev_jobs = []
     for page in range(1, 5):
         jobs_list = sarc_client.job_list(cluster="raisin", page=page, per_page=5)
+        assert jobs_list.total == 20
         assert jobs_list.per_page == 5
         assert len(jobs_list.jobs) == 5
         assert jobs_list.page == page
@@ -575,57 +583,10 @@ def test_job_list(sarc_client):
 
     for page in range(6, 10):
         jobs_list = sarc_client.job_list(cluster="raisin", page=page, per_page=5)
+        assert jobs_list.total == 20
         assert jobs_list.per_page == 5
         assert len(jobs_list.jobs) == 0
         assert jobs_list.page == page
-
-
-@pytest.mark.usefixtures("read_only_db_with_users")
-def test_job_list_by_cursor(sarc_client):
-    """Paginate raisin cluster (20 jobs) via keyset cursor, per_page=5."""
-    seen = []
-    cursor = None
-
-    for _ in range(5):
-        resp = sarc_client.job_list_by_cursor(
-            cluster="raisin",
-            per_page=5,
-            after_submit_time=cursor.after_submit_time if cursor else None,
-            after_id=cursor.after_id if cursor else None,
-        )
-        assert resp.per_page == 5
-        seen.extend(resp.jobs)
-        if resp.next_cursor is None:
-            break
-        cursor = resp.next_cursor
-
-    # 20 jobs total; distinct on (job_id, submit_time) since job_id alone
-    # is NOT unique across rescheduled instances.
-    assert len(seen) == 20
-    assert len({(j.job_id, j.submit_time) for j in seen}) == 20
-    assert resp.next_cursor is None
-
-
-@pytest.mark.usefixtures("read_only_db_with_users")
-def test_job_list_by_cursor_matches_offset(sarc_client):
-    """Keyset pagination must return the same job order as offset pagination."""
-    reference = sarc_client.job_list(cluster="raisin", page=1, per_page=100).jobs
-
-    collected = []
-    cursor = None
-    while True:
-        resp = sarc_client.job_list_by_cursor(
-            cluster="raisin",
-            per_page=7,
-            after_submit_time=cursor.after_submit_time if cursor else None,
-            after_id=cursor.after_id if cursor else None,
-        )
-        collected.extend(resp.jobs)
-        if resp.next_cursor is None:
-            break
-        cursor = resp.next_cursor
-
-    assert [j.job_id for j in collected] == [j.job_id for j in reference]
 
 
 # Test High-Level Client Functions
@@ -734,6 +695,7 @@ def test_count_jobs_by_job_id_list(sarc_client):
 def test_job_list_by_job_id_list(sarc_client):
     """Test job_list with a list of job IDs."""
     result = sarc_client.job_list(job_id=[8, 9])
+    assert result.total == 2
     assert len(result.jobs) == 2
     job_ids = [job.job_id for job in result.jobs]
     assert 8 in job_ids

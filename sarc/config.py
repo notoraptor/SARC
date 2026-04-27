@@ -261,8 +261,6 @@ class ApiConfig:
     per_page: int = 100
     # Maximum page size
     max_page_size: int = 5000
-    oauth2_token: str | None = None
-
     auth: OAuthManager | None = None
 
 
