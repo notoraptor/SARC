@@ -1,14 +1,75 @@
 import logging
+from abc import ABC, abstractmethod
 from datetime import datetime, timedelta
+from typing import Iterator
 
 from tqdm import tqdm
 
 from fixes.metrics.core.job_aggregation import JobAggregation
 from fixes.metrics.core.report import Report, ReportOutput, TextOutputFile
 from fixes.metrics.core.utils import expect_datetime_utc
-from sarc.client.job import _jobs_collection
+from sarc.client.job import SlurmJob, _jobs_collection
+from sarc.rest.client import count_jobs, get_jobs
 
 logger = logging.getLogger(__name__)
+
+
+class AbstractFactory(ABC):
+    """Abstract class to get jobs for metrics"""
+
+    __slots__ = ("time_from", "time_to")
+
+    def __init__(self, time_from: datetime, time_to: datetime):
+        self.time_from = time_from
+        self.time_to = time_to
+
+    @abstractmethod
+    def count(self) -> int:
+        raise NotImplementedError()
+
+    @abstractmethod
+    def find(self) -> Iterator[SlurmJob]:
+        raise NotImplementedError()
+
+
+class MongoDBFactory(AbstractFactory):
+    """Legacy MongoDB factory (intended to be replaced with ApiFactory)"""
+
+    __slots__ = ("query", "coll_jobs")
+
+    def __init__(self, time_from: datetime, time_to: datetime):
+        super().__init__(time_from, time_to)
+        self.query = {
+            "start_time": {"$lte": time_to},
+            "allocated.gpu_type": {"$ne": None},
+            "allocated.gres_gpu": {"$ne": None},
+            "$or": [{"end_time": {"$gte": time_from}}, {"end_time": None}],
+        }
+        self.coll_jobs = _jobs_collection()
+
+    def count(self) -> int:
+        return self.coll_jobs.get_collection().count_documents(self.query)
+
+    def find(self) -> Iterator[SlurmJob]:
+        # Iterate directly on the cursor without complex pagination
+        yield from self.coll_jobs.find_by(self.query)
+
+
+class ApiFactory(AbstractFactory):
+    """New API factory. May be slower (how much ?), and not better (how much ?) than MongoDB factory."""
+
+    __slots__ = ()
+
+    def count(self) -> int:
+        return count_jobs(start=self.time_from, end=self.time_to)
+
+    def find(self) -> Iterator[SlurmJob]:
+        for job in get_jobs(start=self.time_from, end=self.time_to):
+            if (
+                job.allocated.gpu_type is not None
+                and job.allocated.gres_gpu is not None
+            ):
+                yield job
 
 
 def show_metrics(
@@ -17,24 +78,18 @@ def show_metrics(
     expect_datetime_utc(time_from)
     expect_datetime_utc(time_to)
 
+    factory = MongoDBFactory(time_from, time_to)
+    # factory = ApiFactory(time_from, time_to)
     jagg = JobAggregation(time_from, time_to)
-    coll_jobs = _jobs_collection()
-
-    query = {
-        "start_time": {"$lte": time_to},
-        "allocated.gpu_type": {"$ne": None},
-        "allocated.gres_gpu": {"$ne": None},
-        "$or": [{"end_time": {"$gte": time_from}}, {"end_time": None}],
-    }
 
     print(f"Counting jobs for period {time_from} to {time_to}...")
-    expected = coll_jobs.get_collection().count_documents(query)
+    expected = factory.count()
     print(f"Processing {expected} jobs...")
 
     count = 0
     with tqdm(total=expected, desc="Analyzing jobs") as pbar:
         # Iterate directly on the cursor without complex pagination
-        for job in coll_jobs.find_by(query):
+        for job in factory.find():
             pbar.update(1)
             count += 1
 
