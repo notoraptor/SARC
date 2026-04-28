@@ -21,7 +21,7 @@ from pathlib import Path
 
 from metrics.core.report import Report
 
-OUTPUT_FILENAME = "all-metrics-by-cluster.csv"
+OUTPUT_FILENAME = "metrics-cluster-{input_dir}.csv"
 METRICS_FILENAME = "metrics.csv"
 SUBFOLDER_PREFIX = "report-"
 OUTPUT_COLUMNS = [
@@ -50,7 +50,7 @@ def main() -> None:
     if not input_dir.is_dir():
         raise NotADirectoryError(f"Input is not a directory: {input_dir}")
 
-    output_path = Path(args.output) if args.output else input_dir / OUTPUT_FILENAME
+    output_path = Path(args.output) if args.output else input_dir / OUTPUT_FILENAME.format(input_dir=input_dir.name)
 
     subfolders = sorted(p for p in input_dir.iterdir() if p.is_dir())
     if not subfolders:
