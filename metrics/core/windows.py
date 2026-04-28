@@ -1,7 +1,7 @@
 from collections.abc import Callable, Iterator
 from datetime import datetime, timedelta
 
-from fixes.metrics.core.utils import expect_datetime_utc
+from metrics.core.utils import expect_datetime_utc
 
 SPLIT_NONE = "none"
 SPLIT_MONTH = "month"

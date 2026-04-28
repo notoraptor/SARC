@@ -3,19 +3,19 @@ Generate RGU*seconds metrics over a time range.
 
 Examples:
     # single window, text to stdout
-    uv run fixes/metrics/get_metrics.py --start 2026-04-07T00:00Z --end 2026-04-07T17:35Z --output-stdout
+    uv run metrics/get_metrics.py --start 2026-04-07T00:00Z --end 2026-04-07T17:35Z --output-stdout
 
     # single window, text to a file
-    uv run fixes/metrics/get_metrics.py --start 2026-04-07T00:00Z --end 2026-04-08T00:00Z --format text --output report.txt
+    uv run metrics/get_metrics.py --start 2026-04-07T00:00Z --end 2026-04-08T00:00Z --format text --output report.txt
 
     # single window, CSVs in a folder
-    uv run fixes/metrics/get_metrics.py --start 2026-04-07T00:00Z --end 2026-04-08T00:00Z --format csv --output report-dir/
+    uv run metrics/get_metrics.py --start 2026-04-07T00:00Z --end 2026-04-08T00:00Z --format csv --output report-dir/
 
     # split by month, one text file per month in reports/
-    uv run fixes/metrics/get_metrics.py --start 2026-01-01T00:00Z --end 2026-04-15T00:00Z --split-by month --output reports/
+    uv run metrics/get_metrics.py --start 2026-01-01T00:00Z --end 2026-04-15T00:00Z --split-by month --output reports/
 
     # split by week (Monday-aligned), one CSV subfolder per week in reports/
-    uv run fixes/metrics/get_metrics.py --start 2026-01-05T00:00Z --end 2026-02-02T00:00Z --split-by week --format csv --output reports/
+    uv run metrics/get_metrics.py --start 2026-01-05T00:00Z --end 2026-02-02T00:00Z --split-by week --format csv --output reports/
 
 Inputs must be UTC-aware ISO strings (naive datetimes are rejected). Split
 boundaries are anchored on UTC midnight of the 1st of each month or on UTC
@@ -30,10 +30,10 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-from fixes.metrics.core.report import CsvOutputFolder, ReportOutput, TextOutputFile
-from fixes.metrics.core.show_metrics import show_metrics
-from fixes.metrics.core.utils import expect_datetime_utc
-from fixes.metrics.core.windows import SPLIT_CHOICES, SPLIT_NONE, iter_windows
+from metrics.core.report import CsvOutputFolder, ReportOutput, TextOutputFile
+from metrics.core.show_metrics import show_metrics
+from metrics.core.utils import expect_datetime_utc
+from metrics.core.windows import SPLIT_CHOICES, SPLIT_NONE, iter_windows
 
 logger = logging.getLogger(__name__)
 
@@ -139,6 +139,10 @@ def _setup_logging(log_file: str | None) -> None:
     root.addHandler(console)
 
     if log_file:
+        log_file_path = Path(log_file)
+        log_file_dir = log_file_path.parent
+        log_file_dir.mkdir(parents=True, exist_ok=True)
+
         fh = logging.FileHandler(log_file, mode="w", encoding="utf-8")
         fh.setLevel(base_level)
         fh.setFormatter(

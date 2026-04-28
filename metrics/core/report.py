@@ -4,8 +4,8 @@ import sys
 from abc import ABC, abstractmethod
 from pathlib import Path
 
-from fixes.metrics.core.job_aggregation import JobAggregation
-from fixes.metrics.core.scope_metrics import ScopeMetrics
+from metrics.core.job_aggregation import JobAggregation
+from metrics.core.scope_metrics import ScopeMetrics
 
 
 @contextlib.contextmanager

@@ -5,9 +5,9 @@ from typing import Iterator
 
 from tqdm import tqdm
 
-from fixes.metrics.core.job_aggregation import JobAggregation
-from fixes.metrics.core.report import Report, ReportOutput, TextOutputFile
-from fixes.metrics.core.utils import expect_datetime_utc
+from metrics.core.job_aggregation import JobAggregation
+from metrics.core.report import Report, ReportOutput, TextOutputFile
+from metrics.core.utils import expect_datetime_utc
 from sarc.client.job import SlurmJob, _jobs_collection
 from sarc.rest.client import count_jobs, get_jobs
 

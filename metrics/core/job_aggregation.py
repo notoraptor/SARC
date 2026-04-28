@@ -3,7 +3,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Callable
 
-from fixes.metrics.core.scope_metrics import ScopeMetrics
+from metrics.core.scope_metrics import ScopeMetrics
 from sarc.client import get_rgus
 from sarc.client.job import SlurmJob
 from sarc.config import ClusterConfig, config

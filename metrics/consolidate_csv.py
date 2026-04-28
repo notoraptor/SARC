@@ -19,7 +19,7 @@ import argparse
 import csv
 from pathlib import Path
 
-from fixes.metrics.core.report import Report
+from metrics.core.report import Report
 
 OUTPUT_FILENAME = "all-metrics-by-cluster.csv"
 METRICS_FILENAME = "metrics.csv"
