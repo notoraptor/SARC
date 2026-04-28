@@ -116,14 +116,16 @@ def check_old_running_jobs(since: datetime_utc | None = None) -> bool:
 
         for job_key in sorted(job_story.keys()):
             cluster_name, job_id = job_key
-            print(f"[{cluster_name}/{job_id}] job story:")
+            nb_running = len([j for j in job_story[job_key] if j.job_state == SlurmState.RUNNING])
+            assert nb_running
+            print(f"[{cluster_name}/{job_id}] job story ({len(job_story[job_key])} entries, {1 if nb_running == 1 else 'many'} running):")
             for job in job_story[job_key]:
                 job_message = f"\tsubmit: {job.submit_time}, start: {job.start_time}, end: {job.end_time}, state: {job.job_state.name}"
                 if job.end_time is None and job.start_time is not None:
                     max_end_time = job.start_time + timedelta(seconds=job.time_limit)
                     job_message += f", limit: {max_end_time}"
                     if max_end_time < now:
-                        job_message += " EXPIRED"
+                        job_message += " (before now)"
                 print(job_message)
 
     return not jobs_over_limit
