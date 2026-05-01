@@ -60,7 +60,7 @@ def get_database_jobs(base_query: dict | None = None) -> Iterator[SlurmJob]:
     with tqdm(total=expected, desc="job(s)") as pbar:
         while current_time < newest_time:
             # Get jobs so that: current_time <= job.submit_time < current_time + interval
-            next_time = current_time + interval
+            next_time = min(current_time + interval, newest_time)
             for job in coll_jobs.find_by(
                 {**base_query, "submit_time": {"$gte": current_time, "$lt": next_time}}
             ):

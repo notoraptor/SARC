@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import functools
 import logging
 from types import SimpleNamespace
 
@@ -77,6 +78,7 @@ def get_cluster_gpu_billings(cluster_name: str) -> list[GPUBilling]:
     )
 
 
+@functools.cache
 def get_rgus(rgu_version: str = "1.0") -> dict[str, float]:
     """
     Return GPU->RGU mapping for given RGU version.
