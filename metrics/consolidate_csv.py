@@ -50,7 +50,11 @@ def main() -> None:
     if not input_dir.is_dir():
         raise NotADirectoryError(f"Input is not a directory: {input_dir}")
 
-    output_path = Path(args.output) if args.output else input_dir / OUTPUT_FILENAME.format(input_dir=input_dir.name)
+    output_path = (
+        Path(args.output)
+        if args.output
+        else input_dir / OUTPUT_FILENAME.format(input_dir=input_dir.name)
+    )
 
     subfolders = sorted(p for p in input_dir.iterdir() if p.is_dir())
     if not subfolders:
