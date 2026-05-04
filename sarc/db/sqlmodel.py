@@ -1,8 +1,20 @@
 from typing import Any
 
 from pydantic_core import PydanticUndefined as Undefined
+from sqlalchemy import DateTime
+from sqlmodel import Field
 from sqlmodel.main import SQLModel as SQLModelBase
 from sqlmodel.main import finish_init, is_table_model_class
+
+
+def datetime_utc_field(**kwargs: Any) -> Any:
+    """SQLModel field for tz-aware UTC datetimes stored as TIMESTAMPTZ.
+
+    Plain ``datetime`` annotations map to ``TIMESTAMP WITHOUT TIME ZONE`` in
+    PostgreSQL, which drops the tzinfo on round-trip. Use this helper so the
+    column is created as ``TIMESTAMPTZ`` and tz-aware values survive reads.
+    """
+    return Field(sa_type=DateTime(timezone=True), **kwargs)
 
 # This code is lifted from this PR: https://github.com/fastapi/sqlmodel/pull/1823
 # If that is eventually merged, we can revert to just using the base class.

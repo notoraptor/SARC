@@ -2,14 +2,13 @@ from sqlalchemy import Engine
 from sqlmodel import Session, select, text
 
 from sarc.config import config
-
 from . import cluster
 from .sqlmodel import SQLModel
 
 
 def db_upgrade(engine: Engine):
     # We need to import those to register the tables
-    from . import allocation, cluster, diskusage, job, users  # noqa: F401
+    from . import allocation, cluster, diskusage, heatlhcheck, job, users  # noqa: F401
 
     with engine.connect() as conn:
         conn.execute(text("CREATE EXTENSION IF NOT EXISTS btree_gist"))
