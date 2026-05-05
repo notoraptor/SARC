@@ -2,22 +2,14 @@ import json
 import logging
 import sys
 from datetime import datetime, timedelta
-from pathlib import Path
 from typing import Any
 
 from pydantic import BaseModel
-from simple_parsing import ArgumentParser
 from tqdm import tqdm
 
-from sarc.client.job import JobStatistics, SlurmJob, _jobs_collection
+from sarc.client.job import JobStatistics, _jobs_collection
 from sarc.config import UTC, config
 from sarc.core.models.validators import datetime_utc
-from sarc.core.scraping.jobs_utils import update_allocated_gpu_type_from_nodes
-from sarc.jobs.series import (
-    JOB_STATISTICS_METRIC_NAMES,
-    _get_job_time_series_data_cache_key,
-    _get_job_time_series_data_cache_subdir,
-)
 
 logger = logging.getLogger("prometheus_dump.backup")
 
@@ -41,12 +33,8 @@ def main() -> int:
     Currently, save:
     - SlurmJob.stored_statistics,
       if not null and not empty.
-    - SlurmJob.allocated_gpu_type,
-      if GPU cannot be inferred from job nodes.
+    - SlurmJob.allocated_gpu_type.
     """
-    parser = ArgumentParser(description=main.__doc__)
-    parser.parse_args()
-
     cfg = config("scraping")
     coll_jobs = _jobs_collection()
     # Get oldest submit_time.
@@ -83,10 +71,7 @@ def main() -> int:
     interval = timedelta(days=180)
     count = 0
     updated = 0
-    gpu_in_raw_cache = 0
-    gpu_from_nodes = 0
     gpu_collected = 0
-    stats_in_raw_cache = 0
     stats_collected = 0
     current_time = oldest_time
     # We save jobs gradually in a JSONL file,
@@ -114,29 +99,12 @@ def main() -> int:
                         job.stored_statistics is not None
                         and not job.stored_statistics.empty()
                     ):
-                        if has_prometheus_cache_for_statistics(cfg.cache, job):
-                            # There is Prometheus raw data in cache for these stats
-                            # We don't save it.
-                            stats_in_raw_cache += 1
-                        else:
-                            data["stored_statistics"] = job.stored_statistics
-                            stats_collected += 1
+                        data["stored_statistics"] = job.stored_statistics
+                        stats_collected += 1
 
                     if job.allocated.gpu_type is not None:
-                        skip = False
-                        if gpu_type_can_be_inferred_from_nodes(job):
-                            # This GPU type can be inferred from job nodes
-                            # on job parsing. No need to save it.
-                            gpu_from_nodes += 1
-                            skip = True
-                        if has_prometheus_cache_for_gpu_type(cfg.cache, job):
-                            # There is Prometheus raw data in cache for this GPU type.
-                            # We don't save it.
-                            gpu_in_raw_cache += 1
-                            skip = True
-                        if not skip:
-                            data["gpu_type"] = job.allocated.gpu_type
-                            gpu_collected += 1
+                        data["gpu_type"] = job.allocated.gpu_type
+                        gpu_collected += 1
 
                     if data:
                         # There are metrics to save.
@@ -152,7 +120,7 @@ def main() -> int:
                         # because it replace NaN with null, and we don't want that.
                         # There can be NaN values in stored_statistics.
                         record_dict = record.model_dump(mode="json", exclude_unset=True)
-                        # Now, we generate JSON wieh NaN explicitly allowed.
+                        # Now, we generate JSON with NaN explicitly allowed.
                         json_output = json.dumps(record_dict, allow_nan=True)
                         # Finally, we save JSON in a line in JSONL file.
                         print(json_output, file=jsonl_file)
@@ -165,81 +133,12 @@ def main() -> int:
     logger.info(f"Wrote prometheus backup to {output_path}")
     logger.info(f"Collected Prometheus metrics for {updated}/{expected} jobs")
     logger.info(f"Collected GPU types: {gpu_collected}")
-    logger.info(
-        f"Skipped GPU types that can be inferred from job nodes: {gpu_from_nodes}"
-    )
-    logger.info(
-        f"Skipped GPU types already in raw prometheus cache: {gpu_in_raw_cache}"
-    )
     logger.info(f"Collected statistics: {stats_collected}")
-    logger.info(
-        f"Skipped statistics already in raw prometheus cache: {stats_in_raw_cache}"
-    )
     if count != expected:
         logger.warning(
             f"ERROR: Expected {expected} jobs, actually processed {count} jobs"
         )
     return 0
-
-
-def has_prometheus_cache_for_statistics(cache: Path, job: SlurmJob) -> bool:
-    """Return True if there is Prometheus raw cache for job.stored_statistics."""
-    # We check if a cache file exists for the call to get_job_time_series()
-    # which should be used to generate stored_statistics.
-    cache_subdir = _get_job_time_series_data_cache_subdir(job)
-    cache_key = _get_job_time_series_data_cache_key(
-        job, JOB_STATISTICS_METRIC_NAMES, max_points=10_000
-    )
-    return cache_key is not None and (cache / cache_subdir / cache_key).exists()
-
-
-def has_prometheus_cache_for_gpu_type(cache: Path, entry: SlurmJob) -> bool:
-    """Return True if there is Prometheus raw cache for job.allocated.gpu_type."""
-    # We check if a cache file exists for the call to get_job_time_series()
-    # which should be used to get GPU type from Prometheus.
-    cache_subdir = _get_job_time_series_data_cache_subdir(entry)
-    cache_key = _get_job_time_series_data_cache_key(
-        job=entry, metric="slurm_job_utilization_gpu_memory", max_points=1
-    )
-    return cache_key is not None and (cache / cache_subdir / cache_key).exists()
-
-
-def gpu_type_can_be_inferred_from_nodes(entry: SlurmJob) -> bool:
-    """
-    Return True if GPU type can be inferred from job nodes.
-
-    There are 3 sources of info for GPU type:
-    1) `sacct`
-    2) `job nodes` (overwrite `sacct` if available)
-    3) `prometheus` (overwrite `sacct` and `job nodes` if available)
-
-    `job nodes` source will always be computed when running
-    `acquire jobs`. So, if it returns same GPU as the one currently saved,
-    then we don't need to save it here.
-
-    PS: We would also like to check `sacct` vs `prometheus` sources,
-    but we would need to check `sacct` cache to do so: too complicated here.
-    """
-
-    # Get current job GPU type
-    saved_gpu_type = entry.allocated.gpu_type
-
-    # If update_allocated_gpu_type_from_nodes() cannot infer GPU type from nodes,
-    # it returns current value of allocated.gpu_type. So, we set it to None
-    # so that the function returns None by default.
-    entry.allocated.gpu_type = None
-
-    # Now, try to infer GPU type from nodes.
-    gpu_type_from_nodes = update_allocated_gpu_type_from_nodes(
-        entry.fetch_cluster_config(), entry
-    )
-
-    # We set allocated.gpu_type back to saved value
-    entry.allocated.gpu_type = saved_gpu_type
-
-    # If inferred value is same as saved value, then GPU type can be inferred from nodes,
-    # and we won't need to save it as Prometheus data.
-    return gpu_type_from_nodes is not None and gpu_type_from_nodes == saved_gpu_type
 
 
 if __name__ == "__main__":
