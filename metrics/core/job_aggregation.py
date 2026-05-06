@@ -4,9 +4,8 @@ from datetime import datetime
 from typing import Callable
 
 from metrics.core.scope_metrics import ScopeMetrics
-from sarc.client import get_rgus
 from sarc.client.job import SlurmJob
-from sarc.config import ClusterConfig, config
+from sarc.client.rgumetrics import GpuError, get_gpu_type_rgu
 
 logger = logging.getLogger(__name__)
 
@@ -21,56 +20,33 @@ class _JobRecord:
 
 
 class JobAggregation:
-    __slots__ = (
-        "_gpu_type_to_rgu",
-        "_jobs_rgu",
-        "_time_from",
-        "_time_to",
-        "_cluster_configs",
-    )
+    __slots__ = ("_jobs_rgu", "_time_from", "_time_to")
 
     def __init__(self, time_from: datetime, time_to: datetime):
         self._time_from = time_from
         self._time_to = time_to
-        self._gpu_type_to_rgu = get_rgus()
         self._jobs_rgu: dict[tuple, _JobRecord] = {}
-        self._cluster_configs: dict[str, ClusterConfig] = {}
-
-    def _harmonize_gpu(self, job: SlurmJob) -> str | None:
-        """
-        Fallback: harmonize GPU type, if not yet harmonized in job.allocated.gpu_type.
-
-        If this happens, then we may need to update `gpus_per_nodes` for job cluster
-        in SARC configuration file, then either re-run `parse jobs`, or use a dedicated
-        script to fix harmonized GPUs in SARC database.
-        """
-        if not self._cluster_configs:
-            self._cluster_configs = config("scraping").clusters
-        cluster_cfg = self._cluster_configs[job.cluster_name]
-        return cluster_cfg.harmonize_gpu_from_nodes(job.nodes, job.allocated.gpu_type)
 
     def _get_gpu_type_rgu(self, job: SlurmJob) -> float | None:
         gpu_type = job.allocated.gpu_type
         if gpu_type is None:
             return None
 
-        # NB: If GPU type is a MIG
-        # (e.g: "A100-SXM4-40GB : a100_1g.5gb"),
-        # we currently return RGU for the main GPU type
-        # (in this example: "A100-SXM4-40GB")
-        gpu_type = gpu_type.split(":")[0].rstrip()
-
-        # If GPU type not found, maybe it's not yet harmonized.
-        if gpu_type not in self._gpu_type_to_rgu:
-            h_gpu_type = self._harmonize_gpu(job)
+        rgu = None
+        try:
+            rgu = get_gpu_type_rgu(gpu_type)
+        except GpuError:
+            h_gpu_type = job.fetch_cluster_config().harmonize_gpu_from_nodes(
+                job.nodes, gpu_type
+            )
             if h_gpu_type is not None:
                 logger.info(
                     f"had to manually harmonize GPU type for job "
                     f"{job.cluster_name}/{job.job_id}: {gpu_type} -> {h_gpu_type}"
                 )
-                gpu_type = h_gpu_type.split(":")[0].rstrip()
+                rgu = get_gpu_type_rgu(h_gpu_type)
 
-        return self._gpu_type_to_rgu.get(gpu_type, None)
+        return rgu
 
     def aggregate(self, job: SlurmJob, consumed_seconds: float) -> None:
         """Save job record and related RGUs*second"""
