@@ -47,8 +47,14 @@ def main() -> int:
     logger.info(
         f"Oldest submit time in db: {oldest_time} (since {newest_time - oldest_time})"
     )
-    # Count jobs
-    base_query = {}
+    # Count relevant jobs
+    # We look for jobs which have either allocated.gpu_type or stored_statistics.
+    base_query = {
+        "$or": [
+            {"allocated.gpu_type": {"$type": "string"}},
+            {"stored_statistics": {"$type": "object"}},
+        ]
+    }
     logger.info("Counting jobs ...")
     expected = cfg.mongo.database_instance.jobs.count_documents(base_query)
     # We will save Prometheus metrics in a JSONL file,
@@ -79,12 +85,9 @@ def main() -> int:
                     {
                         **base_query,
                         "submit_time": {"$gte": current_time, "$lt": next_time},
-                    }
+                    },
+                    sort=[("submit_time", 1)],
                 ):
-                    pbar.update(1)
-                    count += 1
-                    if job.allocated.gpu_type is None and job.stored_statistics is None:
-                        continue
                     assert (
                         job.allocated.gpu_type is not None
                         or job.stored_statistics is not None
@@ -122,6 +125,8 @@ def main() -> int:
                         # Finally, we save JSON in a line in JSONL file.
                         print(json_output, file=jsonl_file)
                         updated += 1
+                    pbar.update(1)
+                    count += 1
                 current_time = next_time
 
     # Log some info about backup.
