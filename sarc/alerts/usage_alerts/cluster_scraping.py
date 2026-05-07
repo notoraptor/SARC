@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import literal_column
-from sqlmodel import func, select
+from sqlmodel import case, col, func, select
 
 from sarc.alerts.common import CheckResult, HealthCheck
 from sarc.db.cluster import SlurmClusterDB
@@ -52,22 +52,38 @@ def check_nb_jobs_per_cluster_per_time(
     """
     from sarc.config import config
 
+    if time_unit.total_seconds() <= 0:
+        logger.warning(
+            f"Invalid time unit (must be > 0) for cluster usage checking: {time_unit}"
+        )
+        return False
+    if nb_stddev < 0:
+        logger.warning(
+            f"Invalid nb_stddev (must be >= 0) for cluster usage checking: {nb_stddev}"
+        )
+        return False
+
     now = datetime.now(tz=UTC)
 
-    # Effective end_time: replace NULL with `now` (for RUNNING/PENDING jobs).
-    # Effective start_time: derived as eff_end - elapsed_time, since SLURM
-    # start_time is sometimes unreliable (often equal to submit_time).
-    eff_end = func.coalesce(SlurmJobDB.end_time, now)
-    eff_start = eff_end - SlurmJobDB.elapsed_time * literal_column(
-        "interval '1 second'"
+    # Effective start_time: fall back to submit_time when the job never started.
+    eff_start = func.coalesce(SlurmJobDB.start_time, SlurmJobDB.submit_time)
+    # Effective end_time: end_time if recorded; else `start_time + elapsed_time` for jobs that started
+    # (still running or transitioning); else submit_time, so jobs that never ran
+    # (e.g. PENDING) collapse to a point at submission.
+    eff_end = case(
+        (col(SlurmJobDB.end_time).is_not(None), SlurmJobDB.end_time),
+        (
+            col(SlurmJobDB.start_time).is_not(None),
+            SlurmJobDB.start_time
+            + SlurmJobDB.elapsed_time * literal_column("interval '1 second'"),
+        ),
+        else_=SlurmJobDB.submit_time,
     )
 
     with config().db.session() as sess:
         # Determine [start, end] bounds for frame iteration.
         if time_interval is None:
-            start, end = sess.exec(
-                select(func.min(eff_start), func.max(eff_end))
-            ).one()
+            start, end = sess.exec(select(func.min(eff_start), func.max(eff_end))).one()
         else:
             window_end = now
             window_start = window_end - time_interval
@@ -75,14 +91,16 @@ def check_nb_jobs_per_cluster_per_time(
                 select(
                     func.min(func.greatest(eff_start, window_start)),
                     func.max(func.least(eff_end, window_end)),
-                ).where(eff_start < window_end, eff_end > window_start)
+                ).where(eff_start < window_end, eff_end >= window_start)
             ).one()
 
-        if start is None or end is None:
-            return True
+        if start is None or end is None or start >= end:
+            logger.warning(
+                f"Cannot check cluster scraping in interval [{start}, {end})"
+            )
+            return False
 
         # For each frame, count jobs per cluster.
-        # Skip empty frames (no jobs in any cluster).
         timestamps: list[datetime] = []
         cluster_counts: dict[str, dict[datetime, int]] = {}
         frame_start = start
@@ -92,13 +110,12 @@ def check_nb_jobs_per_cluster_per_time(
                 select(SlurmClusterDB.name, func.count())
                 .select_from(SlurmJobDB)
                 .join(SlurmClusterDB, SlurmJobDB.cluster_id == SlurmClusterDB.id)
-                .where(eff_start < frame_end, eff_end > frame_start)
+                .where(eff_start < frame_end, eff_end >= frame_start)
                 .group_by(SlurmClusterDB.name)
             ).all()
-            if rows:
-                timestamps.append(frame_start)
-                for cluster_name, count in rows:
-                    cluster_counts.setdefault(cluster_name, {})[frame_start] = count
+            timestamps.append(frame_start)
+            for cluster_name, count in rows:
+                cluster_counts.setdefault(cluster_name, {})[frame_start] = count
             frame_start = frame_end
 
     # Determine which clusters to report on.
@@ -109,28 +126,21 @@ def check_nb_jobs_per_cluster_per_time(
 
     ok = True
     for cluster_name in sorted_clusters:
-        counts = [
-            cluster_counts.get(cluster_name, {}).get(ts, 0) for ts in timestamps
-        ]
-        if not counts:
-            continue
+        counts = [cluster_counts.get(cluster_name, {}).get(ts, 0) for ts in timestamps]
         avg = statistics.mean(counts)
         stddev = statistics.stdev(counts) if len(counts) > 1 else math.nan
-        threshold = (
-            0.0 if math.isnan(stddev) else max(0.0, avg - nb_stddev * stddev)
-        )
+        threshold = 0.0 if math.isnan(stddev) else max(0.0, avg - nb_stddev * stddev)
 
         if verbose:
-            print(f"[{cluster_name}]", file=sys.stderr)
+            print(f"[{cluster_name}]", file=sys.stderr)  # noqa: T201
             for ts, c in zip(timestamps, counts):
-                print(f"  {ts}  {c}", file=sys.stderr)
-            print(
-                f"avg {avg}, stddev {stddev}, threshold {threshold}",
-                file=sys.stderr,
-            )
-            print(file=sys.stderr)
+                print(f"  {ts}  {c}", file=sys.stderr)  # noqa: T201
+            print(f"avg {avg}, stddev {stddev}, threshold {threshold}", file=sys.stderr)  # noqa: T201
+            print(file=sys.stderr)  # noqa: T201
 
         if threshold == 0:
+            # If threshold is zero, no check can be done, as jobs count will be always >= 0.
+            # Instead, we log a general alert.
             msg = f"[{cluster_name}] threshold 0 ({avg} - {nb_stddev} * {stddev})."
             if len(timestamps) == 1:
                 msg += (
