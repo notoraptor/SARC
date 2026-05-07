@@ -1,9 +1,12 @@
 import re
+from datetime import datetime
 
 import pytest
 import time_machine
 
-from ..jobs.test_func_load_job_series import MOCK_TIME
+from sarc.config import UTC
+
+MOCK_TIME = datetime(2023, 11, 22, tzinfo=UTC)
 
 PARAMS = [
     # Check with default params. In last 7 days from now (mock time: 2023-11-22),

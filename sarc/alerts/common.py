@@ -212,6 +212,7 @@ class HealthCheck:
             else:
                 results = raw_results
         except Exception as exc:  # pylint: disable=W0718
+            traceback.print_tb(exc.__traceback__)
             results = self.result(
                 CheckStatus.ERROR, exception=CheckException.from_exception(exc)
             )
