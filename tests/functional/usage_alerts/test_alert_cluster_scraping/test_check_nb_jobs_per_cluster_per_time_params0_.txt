@@ -1,3 +1,1 @@
 
-WARNING  sarc.alerts.usage_alerts.cluster_scraping:cluster_scraping.py:98 Cannot check cluster scraping in interval [None, None)
-[cluster_scraping_0] FAILURE: cluster_scraping_0

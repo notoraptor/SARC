@@ -5,7 +5,7 @@ import sys
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import literal_column
+import sqlalchemy
 from sqlmodel import case, col, func, select
 
 from sarc.alerts.common import CheckResult, HealthCheck
@@ -63,8 +63,6 @@ def check_nb_jobs_per_cluster_per_time(
         )
         return False
 
-    now = datetime.now(tz=UTC)
-
     # Effective start_time: fall back to submit_time when the job never started.
     eff_start = func.coalesce(SlurmJobDB.start_time, SlurmJobDB.submit_time)
     # Effective end_time: end_time if recorded; else `start_time + elapsed_time` for jobs that started
@@ -75,48 +73,57 @@ def check_nb_jobs_per_cluster_per_time(
         (
             col(SlurmJobDB.start_time).is_not(None),
             SlurmJobDB.start_time
-            + SlurmJobDB.elapsed_time * literal_column("interval '1 second'"),
+            + SlurmJobDB.elapsed_time
+            * sqlalchemy.literal(timedelta(seconds=1), type_=sqlalchemy.Interval),
         ),
         else_=SlurmJobDB.submit_time,
     )
 
     with config().db.session() as sess:
-        # Determine [start, end] bounds for frame iteration.
-        if time_interval is None:
-            start, end = sess.exec(select(func.min(eff_start), func.max(eff_end))).one()
-        else:
-            window_end = now
-            window_start = window_end - time_interval
-            start, end = sess.exec(
-                select(
-                    func.min(func.greatest(eff_start, window_start)),
-                    func.max(func.least(eff_end, window_end)),
-                ).where(eff_start < window_end, eff_end >= window_start)
-            ).one()
-
-        if start is None or end is None or start >= end:
-            logger.warning(
-                f"Cannot check cluster scraping in interval [{start}, {end})"
-            )
+        if not sess.exec(select(func.count(SlurmJobDB.id))).one():
+            logger.warning("No jobs in database.")
             return False
 
-        # For each frame, count jobs per cluster.
+        # Determine [start, end] bounds for frame iteration.
+        if time_interval is None:
+            start, end = sess.exec(
+                select(func.min(eff_start), func.max(eff_end))
+            ).one_or_none()
+        else:
+            end = datetime.now(tz=UTC)
+            start = end - time_interval
+
+        # Pre-compute all timestamps in Python,
+        # to avoid missing any frames with no jobs
         timestamps: list[datetime] = []
+        frame_start_py = start
+        while frame_start_py < end:
+            timestamps.append(frame_start_py)
+            frame_start_py += time_unit
+
+        # Use a Postgresql query: time frange + join
+        time_unit_sql = sqlalchemy.literal(time_unit, type_=sqlalchemy.Interval)
+
+        frames = select(
+            func.generate_series(start, end, time_unit_sql).label("frame_start")
+        ).subquery()
+
+        query = (
+            select(SlurmClusterDB.name, frames.c.frame_start, func.count(SlurmJobDB.id))
+            .select_from(frames)
+            .join(
+                SlurmJobDB,
+                (eff_start < (frames.c.frame_start + time_unit_sql))
+                & (eff_end >= frames.c.frame_start),
+            )
+            .join(SlurmClusterDB, SlurmJobDB.cluster_id == SlurmClusterDB.id)
+            .group_by(SlurmClusterDB.name, frames.c.frame_start)
+        )
+
         cluster_counts: dict[str, dict[datetime, int]] = {}
-        frame_start = start
-        while frame_start < end:
-            frame_end = frame_start + time_unit
-            rows = sess.exec(
-                select(SlurmClusterDB.name, func.count())
-                .select_from(SlurmJobDB)
-                .join(SlurmClusterDB, SlurmJobDB.cluster_id == SlurmClusterDB.id)
-                .where(eff_start < frame_end, eff_end >= frame_start)
-                .group_by(SlurmClusterDB.name)
-            ).all()
-            timestamps.append(frame_start)
-            for cluster_name, count in rows:
-                cluster_counts.setdefault(cluster_name, {})[frame_start] = count
-            frame_start = frame_end
+        # For each frame, count jobs per cluster.
+        for cluster_name, frame_start_db, count in sess.exec(query):
+            cluster_counts.setdefault(cluster_name, {})[frame_start_db] = count
 
     # Determine which clusters to report on.
     if cluster_names:
