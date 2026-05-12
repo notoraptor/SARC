@@ -16,19 +16,19 @@ def main():
 
         print("Convert left file to duckdb ...")
         conn.execute(
-            f"CREATE TABLE jobs_left AS SELECT * FROM read_csv_auto(?)", [filename_left]
+            "CREATE TABLE jobs_left AS SELECT * FROM read_csv_auto(?)", [filename_left]
         )
         print("Converted.")
 
         print("Convert right file to duckdb ...")
         conn.execute(
-            f"CREATE TABLE jobs_right AS SELECT * FROM read_csv_auto(?)",
+            "CREATE TABLE jobs_right AS SELECT * FROM read_csv_auto(?)",
             [filename_right],
         )
         print("Converted.")
 
-        (count_left,) = conn.execute(f"SELECT COUNT(*) FROM jobs_left").fetchone()
-        (count_right,) = conn.execute(f"SELECT COUNT(*) FROM jobs_right").fetchone()
+        (count_left,) = conn.execute("SELECT COUNT(*) FROM jobs_left").fetchone()
+        (count_right,) = conn.execute("SELECT COUNT(*) FROM jobs_right").fetchone()
         print(count_left, "vs", count_right)
 
 

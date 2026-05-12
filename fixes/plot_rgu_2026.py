@@ -1,25 +1,30 @@
 """
 Plot weekly RGU consumption per cluster for 2026 from a SARC job CSV dump.
 
-Reads a CSV produced by ``fixes/load_jobs_csv.py``, keeps only jobs whose
-``submit_time`` falls in 2026, buckets them by ISO week (Monday-start), and
-computes per (week, cluster_name)::
+Reads a CSV produced by ``fixes/load_jobs_csv.py`` row by row with the
+stdlib ``csv`` module — no duckdb, no full in-memory load. For every row,
+the Monday of the ``submit_time`` week is computed; only rows whose
+Monday falls in 2026 are kept. Per (week, cluster_name) we accumulate::
 
     allocated_rgu_week = sum(gpu_type_rgu * gres_gpu * elapsed_time) / 604800
 
-Renders a stacked bar chart plus a line of distinct user count per week,
-mirroring the corresponding PowerBI dashboard view so the two can be
-compared.
+and per week we count distinct users. The result is a stacked bar chart
+plus a line of distinct user count per week, mirroring the corresponding
+PowerBI dashboard view so the two can be compared.
 """
 
 import argparse
+import csv
+import math
 import os
 import sys
+from collections import defaultdict
+from datetime import datetime, timedelta, UTC
 
-import duckdb
 import matplotlib.dates as mdates
 import matplotlib.patches as mpatches
 import matplotlib.pyplot as plt
+from tqdm import tqdm
 
 # PowerBI default theme — chosen so the rendered plot lines up with what
 # the dashboard produces (visual comparability is the whole point here).
@@ -43,91 +48,87 @@ LEGEND_ORDER = ("fir", "mila", "narval", "nibi", "rorqual")
 USER_LINE_COLOR = "#1F9D6B"
 WEEK_SECONDS = 7 * 24 * 3600  # 604800
 
-
-def _query_weekly_rgu(conn: duckdb.DuckDBPyConnection, table: str):
-    # date_part / date_trunc work on both naive and tz-aware timestamps in
-    # duckdb; we cast the truncated value to DATE so the Python side gets a
-    # uniform key regardless of how the CSV reader inferred submit_time.
-    # Filter on the Monday of the week (not the year of submit_time) so the
-    # Dec 29 → Jan 4 split-week, which would have a 2025 Monday, is excluded.
-    return conn.execute(f"""
-        SELECT
-            date_trunc('week', submit_time)::DATE AS week_start,
-            cluster_name,
-            sum("allocated.gpu_type_rgu" * "allocated.gres_gpu" * elapsed_time)
-                / {WEEK_SECONDS}.0 AS rgu_week
-        FROM {table}
-        WHERE date_trunc('week', submit_time)::DATE >= DATE '2026-01-05'
-          AND date_trunc('week', submit_time)::DATE <  DATE '2027-01-04'
-          AND "allocated.gpu_type_rgu" IS NOT NULL
-          AND "allocated.gres_gpu" > 0
-          AND elapsed_time > 0
-        GROUP BY 1, 2
-        ORDER BY 1, 2
-    """).fetchall()
+# Window of accepted week-Mondays: first Monday of 2026 through last Monday
+# whose week still belongs to 2026. (Jan 1 2026 is a Thursday; its week
+# starts on Mon Dec 29 2025 and would otherwise sneak in.)
+FIRST_MONDAY_2026 = datetime(2026, 1, 5, tzinfo=UTC)
+FIRST_MONDAY_2027 = datetime(2027, 1, 4, tzinfo=UTC)
 
 
-def _query_weekly_users(conn: duckdb.DuckDBPyConnection, table: str):
-    return conn.execute(f"""
-        SELECT
-            date_trunc('week', submit_time)::DATE AS week_start,
-            count(DISTINCT "user") AS n_user
-        FROM {table}
-        WHERE date_trunc('week', submit_time)::DATE >= DATE '2026-01-05'
-          AND date_trunc('week', submit_time)::DATE <  DATE '2027-01-04'
-        GROUP BY 1 ORDER BY 1
-    """).fetchall()
+def _to_float(s: str | None) -> float | None:
+    if s is None or s == "":
+        return None
+    v = float(s)
+    assert not math.isnan(v)
+    return v
 
 
-def _load_csv(conn: duckdb.DuckDBPyConnection, path: str) -> None:
-    print(f"Loading {path}…")
-    conn.execute(
-        "CREATE TABLE jobs AS SELECT * FROM read_csv_auto(?, parallel=true, sample_size=-1)",
-        [path],
-    )
-    row = conn.execute("SELECT count(*) FROM jobs").fetchone()
-    assert row is not None
-    print(f"  {row[0]:,} rows")
+def _monday_of(dt: datetime) -> datetime:
+    # weekday(): Monday = 0. Strip the time so the bucket key is a
+    # midnight on Monday — easier to use as a dict key and to
+    # feed back to matplotlib.
+    days_since_monday = dt.weekday()
+    return dt.replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=days_since_monday)
 
 
-def main() -> int:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("csv", help="Path to the jobs CSV dump.")
-    parser.add_argument(
-        "-o",
-        "--output",
-        default="rgu_2026.png",
-        help="Output PNG path (default: rgu_2026.png).",
-    )
-    args = parser.parse_args()
+def _aggregate(
+    csv_path: str,
+) -> tuple[dict[tuple[datetime, str], float], dict[datetime, set[str]]]:
+    rgu_by_wc: dict[tuple[datetime, str], float] = defaultdict(float)
+    users_by_w: dict[datetime, set[str]] = defaultdict(set)
 
-    if not os.path.exists(args.csv):
-        print(f"CSV not found: {args.csv}", file=sys.stderr)
-        return 1
+    n_total = 0
+    n_kept_user = 0
+    n_kept_rgu = 0
+    with open(csv_path, encoding="utf-8", newline="") as f:
+        reader = csv.DictReader(f)
+        for row in tqdm(reader, desc="rows", unit=" rows"):
+            n_total += 1
+            submit = datetime.fromisoformat(row["submit_time"])
+            assert submit.tzinfo is not None
+            assert submit.utcoffset() == timedelta(0)
 
-    conn = duckdb.connect(":memory:")
-    conn.execute("SET preserve_insertion_order=false")
-    _load_csv(conn, args.csv)
+            wk = _monday_of(submit)
+            if wk < FIRST_MONDAY_2026 or wk >= FIRST_MONDAY_2027:
+                continue
 
-    rgu_rows = _query_weekly_rgu(conn, "jobs")
-    user_rows = _query_weekly_users(conn, "jobs")
-    if not rgu_rows:
-        print("No 2026 RGU rows in the CSV.", file=sys.stderr)
-        return 2
+            cluster = row["cluster_name"]
+            user = row.get("user") or ""
+            if user:
+                users_by_w[wk].add(user)
+                n_kept_user += 1
 
-    weeks = sorted({r[0] for r in rgu_rows} | {r[0] for r in user_rows})
-    clusters_seen = sorted({r[1] for r in rgu_rows})
+            rgu = _to_float(row.get("allocated.gpu_type_rgu"))
+            gres = _to_float(row.get("allocated.gres_gpu"))
+            elapsed = _to_float(row.get("elapsed_time"))
+            if rgu is None or gres is None or elapsed is None:
+                continue
+            if gres <= 0 or elapsed <= 0:
+                continue
+            rgu_by_wc[(wk, cluster)] += rgu * gres * elapsed / WEEK_SECONDS
+            n_kept_rgu += 1
+
+    print(f"  parsed                       : {n_total:,} rows")
+    print(f"  kept for user count (2026)   : {n_kept_user:,}")
+    print(f"  kept for RGU sum   (2026)    : {n_kept_rgu:,}")
+    return rgu_by_wc, users_by_w
+
+
+def _plot(
+    rgu_by_wc: dict[tuple[datetime, str], float],
+    users_by_w: dict[datetime, set[str]],
+    output: str,
+) -> None:
+    weeks = sorted({w for w, _ in rgu_by_wc} | set(users_by_w))
+    clusters_seen = sorted({c for _, c in rgu_by_wc})
     legend_clusters = [c for c in LEGEND_ORDER if c in clusters_seen] + sorted(
         c for c in clusters_seen if c not in LEGEND_ORDER
     )
-    by_cluster: dict[str, dict] = {
-        c: dict.fromkeys(weeks, 0.0) for c in legend_clusters
+
+    by_cluster: dict[str, dict[datetime, float]] = {
+        c: {w: rgu_by_wc.get((w, c), 0.0) for w in weeks} for c in legend_clusters
     }
-    for w, c, v in rgu_rows:
-        by_cluster[c][w] = v or 0.0
-    users_by_week = dict.fromkeys(weeks, 0)
-    for w, n_user in user_rows:
-        users_by_week[w] = n_user or 0
+    users_by_week = {w: len(users_by_w.get(w, set())) for w in weeks}
 
     fig, ax = plt.subplots(figsize=(13, 6))
     # PowerBI restacks each bar with the largest segment at the bottom; we
@@ -143,7 +144,7 @@ def main() -> int:
             if v <= 0:
                 continue
             ax.bar(
-                w,
+                w,  # type: ignore[arg-type]  # mpl accepts datetime
                 v,
                 bottom=offset,
                 width=5,
@@ -163,7 +164,7 @@ def main() -> int:
     ax2 = ax.twinx()
     user_values = [users_by_week[w] for w in weeks]
     (line,) = ax2.plot(
-        weeks,
+        weeks,  # type: ignore[arg-type]  # mpl accepts list[datetime]
         user_values,
         color=USER_LINE_COLOR,
         marker="o",
@@ -174,7 +175,7 @@ def main() -> int:
         if v:
             ax2.annotate(
                 str(v),
-                (w, v),
+                (w, v),  # type: ignore[arg-type]  # mpl accepts (datetime, int)
                 textcoords="offset points",
                 xytext=(0, 6),
                 ha="center",
@@ -199,8 +200,32 @@ def main() -> int:
     )
 
     fig.tight_layout()
-    fig.savefig(args.output, dpi=140)
-    print(f"Saved {args.output}")
+    fig.savefig(output, dpi=140)
+    print(f"Saved {output}")
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("csv", help="Path to the jobs CSV dump.")
+    parser.add_argument(
+        "-o",
+        "--output",
+        default="rgu_2026.png",
+        help="Output PNG path (default: rgu_2026.png).",
+    )
+    args = parser.parse_args()
+
+    if not os.path.exists(args.csv):
+        print(f"CSV not found: {args.csv}", file=sys.stderr)
+        return 1
+
+    print(f"Streaming {args.csv}…")
+    rgu_by_wc, users_by_w = _aggregate(args.csv)
+    if not rgu_by_wc:
+        print("No 2026 weekly RGU data found.", file=sys.stderr)
+        return 2
+
+    _plot(rgu_by_wc, users_by_w, args.output)
     return 0
 
 
