@@ -1,8 +1,10 @@
 import argparse
 import csv
 import logging
+import math
 import sys
 from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from tqdm import tqdm
 
@@ -68,6 +70,13 @@ def _expected_columns() -> list[str]:
     return list(flatten(skeleton).keys())
 
 
+def _set_nan_to_none(data: dict[str, Any]) -> None:
+    """Replace NaN with None in a flattened dictionary."""
+    for key, value in data.items():
+        if isinstance(value, float) and math.isnan(value):
+            data[key] = None
+
+
 @scraping_mode_required
 def main():
     logging.basicConfig(level=logging.INFO, force=True)
@@ -127,6 +136,10 @@ def main():
                                 statistics[key] = _empty_stats_dict()
                     job_dict.update(statistics)
                     flat_job = flatten(job_dict)
+
+                    # Replace NaN with None in flatten dict.
+                    _set_nan_to_none(flat_job)
+
                     missing = expected_set - flat_job.keys()
                     if missing:
                         raise ValueError(
