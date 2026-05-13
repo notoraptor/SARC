@@ -19,7 +19,7 @@ import math
 import os
 import sys
 from collections import defaultdict
-from datetime import datetime, timedelta, UTC
+from datetime import UTC, datetime, timedelta
 
 import matplotlib.dates as mdates
 import matplotlib.patches as mpatches
@@ -68,7 +68,9 @@ def _monday_of(dt: datetime) -> datetime:
     # midnight on Monday — easier to use as a dict key and to
     # feed back to matplotlib.
     days_since_monday = dt.weekday()
-    return dt.replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=days_since_monday)
+    return dt.replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(
+        days=days_since_monday
+    )
 
 
 def _aggregate(
