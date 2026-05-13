@@ -70,11 +70,33 @@ def _expected_columns() -> list[str]:
     return list(flatten(skeleton).keys())
 
 
-def _set_nan_to_none(data: dict[str, Any]) -> None:
-    """Replace NaN with None in a flattened dictionary."""
+def _clean_flattened_dictionary(data: dict[str, Any]) -> None:
+    """
+    Clean values in flattened dictionary.
+    - Replace NaN with None.
+    - Convert any non-basic type to string.
+    - Remove any CSV-ambiguous character from strings.
+    """
     for key, value in data.items():
         if isinstance(value, float) and math.isnan(value):
+            # Replace NaN with None.
             data[key] = None
+            continue
+
+        if value is None or isinstance(value, (bool, int, float, datetime)):
+            continue
+
+        if not isinstance(value, str):
+            # Any non-basic type is converted to a string
+            value = str(value)
+
+        # Any string is curated
+        data[key] = (
+            value.replace("\r\n", " ")
+            .replace("\r", " ")
+            .replace("\n", " ")
+            .replace(",", "    ")
+        )
 
 
 @scraping_mode_required
@@ -137,8 +159,8 @@ def main():
                     job_dict.update(statistics)
                     flat_job = flatten(job_dict)
 
-                    # Replace NaN with None in flatten dict.
-                    _set_nan_to_none(flat_job)
+                    # Clean flattened dictionary.
+                    _clean_flattened_dictionary(flat_job)
 
                     missing = expected_set - flat_job.keys()
                     if missing:
