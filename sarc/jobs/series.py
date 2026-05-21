@@ -10,6 +10,7 @@ from prometheus_api_client.metric_range_df import MetricRangeDataFrame
 
 from sarc.client.job import JobStatistics, SlurmJob, Statistics
 from sarc.config import UTC
+from sarc.dcgm import DCGM_FP64_BLANK
 from sarc.traces import trace_decorator
 
 logger = logging.getLogger(__name__)
@@ -139,6 +140,13 @@ def compute_job_statistics_from_dataframe(
         return None
 
     df = df.reset_index()
+
+    # Drop DCGM BLANK sentinels (2**47 and the NOT_FOUND/NOT_SUPPORTED/
+    # NOT_PERMISSIONED variants) that the GPU exporter forwards untouched
+    # when a metric is unavailable; otherwise they pollute mean/max/quantiles.
+    df = df[df["value"] < DCGM_FP64_BLANK]
+    if df.empty:
+        return None
 
     groupby = ["instance", "core", "gpu"]
     groupby = [col for col in groupby if col in df]
